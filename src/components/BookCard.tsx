@@ -83,48 +83,60 @@ export const BookCard: React.FC<BookCardProps> = ({
 
   if (layout === 'horizontal') {
     return (
-      <TouchableOpacity
-        style={[styles.horizontalCard, style]}
-        onPress={handlePress}
-        activeOpacity={0.88}
-        accessibilityRole="button"
-        accessibilityLabel={`View details for ${book.title} by ${book.vendor}`}
-      >
-        <View style={styles.horizontalCoverWrapper}>
+      <View style={[styles.horizontalCard, style]}>
+        <TouchableOpacity
+          style={styles.horizontalCoverWrapper}
+          onPress={handlePress}
+          activeOpacity={0.88}
+          accessibilityRole="button"
+          accessibilityLabel={`View details for ${book.title}`}
+        >
           <Image
             source={{ uri: coverUrl }}
             style={styles.horizontalCoverImage}
             resizeMode="cover"
           />
-        </View>
+        </TouchableOpacity>
 
         <View style={styles.horizontalInfo}>
-          <Text style={styles.authorText} numberOfLines={1}>
-            {book.vendor}
-          </Text>
-          <Text style={styles.horizontalTitle} numberOfLines={2}>
-            {book.title}
-          </Text>
+          <TouchableOpacity
+            style={styles.horizontalTextWrapper}
+            onPress={handlePress}
+            activeOpacity={0.88}
+            accessibilityRole="button"
+            accessibilityLabel={`View details for ${book.title} by ${book.vendor}`}
+          >
+            <Text style={styles.authorText} numberOfLines={1}>
+              {book.vendor}
+            </Text>
+            <Text style={styles.horizontalTitle} numberOfLines={2}>
+              {book.title}
+            </Text>
 
-          {book.rating ? (
-            <View style={styles.ratingRow}>
-              <Ionicons name="star" size={13} color={colors.rating} />
-              <Text style={styles.ratingText}>{book.rating.toFixed(1)}</Text>
-              {book.reviewCount ? (
-                <Text style={styles.reviewCount}>({book.reviewCount})</Text>
-              ) : null}
-            </View>
-          ) : null}
+            {book.rating ? (
+              <View style={styles.ratingRow}>
+                <Ionicons name="star" size={13} color={colors.rating} />
+                <Text style={styles.ratingText}>{book.rating.toFixed(1)}</Text>
+                {book.reviewCount ? (
+                  <Text style={styles.reviewCount}>({book.reviewCount})</Text>
+                ) : null}
+              </View>
+            ) : null}
+          </TouchableOpacity>
 
           <View style={styles.priceAndActionRow}>
-            <View style={styles.priceContainer}>
+            <TouchableOpacity
+              style={styles.priceContainer}
+              onPress={handlePress}
+              activeOpacity={0.88}
+            >
               <Text style={styles.priceText}>{formatCurrency(price)}</Text>
               {compareAtPrice && compareAtPrice > price ? (
                 <Text style={styles.comparePriceText}>
                   {formatCurrency(compareAtPrice)}
                 </Text>
               ) : null}
-            </View>
+            </TouchableOpacity>
 
             <TouchableOpacity
               style={styles.quickAddButton}
@@ -137,71 +149,77 @@ export const BookCard: React.FC<BookCardProps> = ({
             </TouchableOpacity>
           </View>
         </View>
-      </TouchableOpacity>
+      </View>
     );
   }
 
   // Default Grid Card
   return (
-    <TouchableOpacity
-      style={[styles.gridCard, style]}
-      onPress={handlePress}
-      activeOpacity={0.88}
-      accessibilityRole="button"
-      accessibilityLabel={`View details for ${book.title} by ${book.vendor}`}
-    >
-      <View style={styles.gridCoverWrapper}>
-        <Image
-          source={{ uri: coverUrl }}
-          style={styles.gridCoverImage}
-          resizeMode="cover"
-        />
-        {compareAtPrice && compareAtPrice > price ? (
-          <View style={styles.saleBadge}>
-            <Text style={styles.saleBadgeText}>SALE</Text>
-          </View>
-        ) : null}
-      </View>
-
-      <View style={styles.gridInfo}>
-        <Text style={styles.authorText} numberOfLines={1}>
-          {book.vendor}
-        </Text>
-
-        <Text style={styles.gridTitle} numberOfLines={2}>
-          {book.title}
-        </Text>
-
-        {book.rating ? (
-          <View style={styles.ratingRow}>
-            <Ionicons name="star" size={12} color={colors.rating} />
-            <Text style={styles.ratingText}>{book.rating.toFixed(1)}</Text>
-          </View>
-        ) : null}
-
-        <View style={styles.priceAndActionRow}>
-          <View style={styles.priceContainer}>
-            <Text style={styles.priceText}>{formatCurrency(price)}</Text>
-            {compareAtPrice && compareAtPrice > price ? (
-              <Text style={styles.comparePriceText}>
-                {formatCurrency(compareAtPrice)}
-              </Text>
-            ) : null}
-          </View>
-
-          <TouchableOpacity
-            style={styles.quickAddCircle}
-            onPress={handleQuickAdd}
-            activeOpacity={0.7}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-            accessibilityRole="button"
-            accessibilityLabel={`Add ${book.title} to cart`}
-          >
-            <Ionicons name="add" size={18} color={colors.textInverse} />
-          </TouchableOpacity>
+    <View style={[styles.gridCard, style]}>
+      <TouchableOpacity
+        style={styles.gridCardBody}
+        onPress={handlePress}
+        activeOpacity={0.88}
+        accessibilityRole="button"
+        accessibilityLabel={`View details for ${book.title} by ${book.vendor}`}
+      >
+        <View style={styles.gridCoverWrapper}>
+          <Image
+            source={{ uri: coverUrl }}
+            style={styles.gridCoverImage}
+            resizeMode="cover"
+          />
+          {compareAtPrice && compareAtPrice > price ? (
+            <View style={styles.saleBadge}>
+              <Text style={styles.saleBadgeText}>SALE</Text>
+            </View>
+          ) : null}
         </View>
+
+        <View style={styles.gridInfo}>
+          <Text style={styles.authorText} numberOfLines={1}>
+            {book.vendor}
+          </Text>
+
+          <Text style={styles.gridTitle} numberOfLines={2}>
+            {book.title}
+          </Text>
+
+          {book.rating ? (
+            <View style={styles.ratingRow}>
+              <Ionicons name="star" size={12} color={colors.rating} />
+              <Text style={styles.ratingText}>{book.rating.toFixed(1)}</Text>
+            </View>
+          ) : null}
+        </View>
+      </TouchableOpacity>
+
+      <View style={styles.priceAndActionRow}>
+        <TouchableOpacity
+          style={styles.priceContainer}
+          onPress={handlePress}
+          activeOpacity={0.88}
+        >
+          <Text style={styles.priceText}>{formatCurrency(price)}</Text>
+          {compareAtPrice && compareAtPrice > price ? (
+            <Text style={styles.comparePriceText}>
+              {formatCurrency(compareAtPrice)}
+            </Text>
+          ) : null}
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.quickAddCircle}
+          onPress={handleQuickAdd}
+          activeOpacity={0.7}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          accessibilityRole="button"
+          accessibilityLabel={`Add ${book.title} to cart`}
+        >
+          <Ionicons name="add" size={18} color={colors.textInverse} />
+        </TouchableOpacity>
       </View>
-    </TouchableOpacity>
+    </View>
   );
 };
 
@@ -215,6 +233,10 @@ const styles = StyleSheet.create({
     ...shadows.subtle,
     borderWidth: 1,
     borderColor: colors.borderLight,
+    flex: 1,
+    justifyContent: 'space-between',
+  },
+  gridCardBody: {
     flex: 1,
   },
   gridCoverWrapper: {
@@ -332,6 +354,9 @@ const styles = StyleSheet.create({
     flex: 1,
     marginLeft: spacing.md,
     justifyContent: 'space-between',
+  },
+  horizontalTextWrapper: {
+    flex: 1,
   },
   horizontalTitle: {
     ...typography.h3,
