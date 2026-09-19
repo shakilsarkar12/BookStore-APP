@@ -275,7 +275,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     padding: spacing.lg,
-    paddingBottom: spacing.xxxl * 2,
+    paddingBottom: 120,
   },
   searchTrigger: {
     flexDirection: 'row',
