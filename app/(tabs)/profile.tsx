@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   StyleSheet,
   Text,
@@ -9,7 +9,6 @@ import {
   Modal,
   Alert,
   Image,
-  Switch,
   ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -21,9 +20,10 @@ import { typography, radii, spacing, shadows } from '../../src/theme/typography'
 import { useCustomerStore } from '../../src/store/useCustomerStore';
 import { useCartStore } from '../../src/store/useCartStore';
 import { MOCK_BOOKS } from '../../src/data/mockBooks';
-import { CustomerAddress, CustomerOrder } from '../../src/types/shopify';
+import { CustomerOrder, CustomerAddress } from '../../src/types/shopify';
 
-type ActiveTab = 'orders' | 'addresses' | 'wishlist' | 'settings';
+type AuthMode = 'login' | 'register' | 'forgot';
+type ProfileTab = 'orders' | 'addresses' | 'wishlist';
 
 export default function ProfileScreen() {
   const router = useRouter();
@@ -32,47 +32,50 @@ export default function ProfileScreen() {
     customer,
     wishlistProductIds,
     isLoading,
-    loginWithShopify,
-    loginAsGuestOrDemo,
+    login,
+    register,
+    forgotPassword,
+    fetchCustomer,
     logout,
     toggleWishlist,
     addAddress,
-    updateAddress,
     deleteAddress,
     setDefaultAddress,
   } = useCustomerStore();
 
   const addItemToCart = useCartStore((state) => state.addItem);
-  const clearCart = useCartStore((state) => state.clearCart);
 
-  // Tab State
-  const [activeTab, setActiveTab] = useState<ActiveTab>('orders');
+  // Auth Form State
+  const [authMode, setAuthMode] = useState<AuthMode>('login');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [authSuccessMsg, setAuthSuccessMsg] = useState<string | null>(null);
+
+  // Profile Tabs
+  const [activeTab, setActiveTab] = useState<ProfileTab>('orders');
 
   // Address Modal State
-  const [isAddressModalVisible, setIsAddressModalVisible] = useState(false);
-  const [editingAddressId, setEditingAddressId] = useState<string | null>(null);
-  const [addrName, setAddrName] = useState('');
+  const [isAddressModalOpen, setIsAddressModalOpen] = useState(false);
   const [addrStreet, setAddrStreet] = useState('');
   const [addrCity, setAddrCity] = useState('');
   const [addrProvince, setAddrProvince] = useState('');
   const [addrZip, setAddrZip] = useState('');
   const [addrPhone, setAddrPhone] = useState('');
   const [addrIsDefault, setAddrIsDefault] = useState(false);
+  const [isSavingAddress, setIsSavingAddress] = useState(false);
 
-  // Order Tracking Modal State
-  const [trackingOrder, setTrackingOrder] = useState<CustomerOrder | null>(null);
+  // Selected Order for detail / tracking
+  const [selectedOrder, setSelectedOrder] = useState<CustomerOrder | null>(null);
 
-  // Notification toggles
-  const [orderAlerts, setOrderAlerts] = useState(true);
-  const [promoAlerts, setPromoAlerts] = useState(false);
-
-  // Developer info collapsed toggle
-  const [showDevInfo, setShowDevInfo] = useState(false);
-
-  const shopifyDomain =
-    process.env.EXPO_PUBLIC_SHOPIFY_DOMAIN || 'book-store-cpepvunk.myshopify.com';
-  const customerClientId =
-    process.env.EXPO_PUBLIC_CUSTOMER_ACCOUNT_CLIENT_ID || '6d60f305-08b3-4b38-a6e4-74700703d114';
+  useEffect(() => {
+    if (isAuthenticated) {
+      fetchCustomer();
+    }
+  }, [isAuthenticated]);
 
   const formatCurrency = (val: number, currency = 'USD') => {
     return new Intl.NumberFormat('en-US', {
@@ -81,41 +84,76 @@ export default function ProfileScreen() {
     }).format(val);
   };
 
-  // Open Add Address Modal
-  const openNewAddressModal = () => {
-    setEditingAddressId(null);
-    setAddrName(customer?.displayName || '');
-    setAddrStreet('');
-    setAddrCity('');
-    setAddrProvince('');
-    setAddrZip('');
-    setAddrPhone(customer?.phone || '');
-    setAddrIsDefault(customer?.addresses.length === 0);
-    setIsAddressModalVisible(true);
+  // Handle Native Shopify Login
+  const handleLogin = async () => {
+    setAuthError(null);
+    setAuthSuccessMsg(null);
+
+    if (!email.trim() || !password) {
+      setAuthError('Please enter your email and password.');
+      return;
+    }
+
+    const result = await login(email, password);
+    if (!result.success) {
+      setAuthError(result.error || 'Login failed. Please verify your credentials.');
+    }
   };
 
-  // Open Edit Address Modal
-  const openEditAddressModal = (addr: CustomerAddress) => {
-    setEditingAddressId(addr.id);
-    setAddrName(addr.name || '');
-    setAddrStreet(addr.address1 || '');
-    setAddrCity(addr.city || '');
-    setAddrProvince(addr.province || '');
-    setAddrZip(addr.zip || '');
-    setAddrPhone(addr.phone || '');
-    setAddrIsDefault(!!addr.isDefault);
-    setIsAddressModalVisible(true);
+  // Handle Native Shopify Registration
+  const handleRegister = async () => {
+    setAuthError(null);
+    setAuthSuccessMsg(null);
+
+    if (!email.trim() || !password) {
+      setAuthError('Please provide an email and password.');
+      return;
+    }
+
+    if (password.length < 5) {
+      setAuthError('Password must be at least 5 characters long.');
+      return;
+    }
+
+    const result = await register({
+      email,
+      password,
+      firstName,
+      lastName,
+    });
+
+    if (!result.success) {
+      setAuthError(result.error || 'Registration failed. Please try again.');
+    }
   };
 
-  // Save Address
-  const handleSaveAddress = () => {
+  // Handle Forgot Password
+  const handleForgotPassword = async () => {
+    setAuthError(null);
+    setAuthSuccessMsg(null);
+
+    if (!email.trim()) {
+      setAuthError('Please enter your registered email address.');
+      return;
+    }
+
+    const result = await forgotPassword(email);
+    if (result.success) {
+      setAuthSuccessMsg('Password reset instructions have been sent to your email.');
+    } else {
+      setAuthError(result.error || 'Could not send reset password email.');
+    }
+  };
+
+  // Save new address to Shopify
+  const handleSaveAddress = async () => {
     if (!addrStreet.trim() || !addrCity.trim() || !addrZip.trim()) {
       Alert.alert('Incomplete Address', 'Please provide Street, City, and Postal Code.');
       return;
     }
 
-    const payload = {
-      name: addrName.trim() || customer?.displayName || 'Customer',
+    setIsSavingAddress(true);
+    const res = await addAddress({
       address1: addrStreet.trim(),
       city: addrCity.trim(),
       province: addrProvince.trim(),
@@ -123,26 +161,48 @@ export default function ProfileScreen() {
       country: 'United States',
       phone: addrPhone.trim(),
       isDefault: addrIsDefault,
-    };
+    });
+    setIsSavingAddress(false);
 
-    if (editingAddressId) {
-      updateAddress(editingAddressId, payload);
+    if (res.success) {
+      setIsAddressModalOpen(false);
+      setAddrStreet('');
+      setAddrCity('');
+      setAddrProvince('');
+      setAddrZip('');
+      setAddrPhone('');
+      Alert.alert('Address Saved', 'Your address has been saved to your Shopify account.');
     } else {
-      addAddress(payload);
+      Alert.alert('Error', res.error || 'Could not save address.');
     }
-
-    setIsAddressModalVisible(false);
   };
 
-  // Reorder Items
+  // Delete address
+  const handleDeleteAddress = (id: string) => {
+    Alert.alert('Delete Address', 'Are you sure you want to remove this address from your account?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          const res = await deleteAddress(id);
+          if (!res.success) {
+            Alert.alert('Error', res.error || 'Could not delete address');
+          }
+        },
+      },
+    ]);
+  };
+
+  // Reorder items from past order
   const handleReorder = (order: CustomerOrder) => {
     order.lineItems.forEach((item) => {
       addItemToCart({
-        productId: `prod_${item.id}`,
-        variantId: `var_${item.id}`,
+        productId: item.id,
+        variantId: item.id,
         title: item.title,
-        author: 'Featured Author',
-        format: 'Paperback Edition',
+        author: 'Store Author',
+        format: 'Standard Edition',
         price: item.price,
         currencyCode: order.currencyCode,
         imageUrl: item.imageUrl || '',
@@ -152,9 +212,9 @@ export default function ProfileScreen() {
 
     Alert.alert(
       'Added to Cart',
-      `All items from ${order.name} have been added to your shopping cart!`,
+      `Items from order ${order.name} have been added to your shopping cart.`,
       [
-        { text: 'Keep Browsing', style: 'cancel' },
+        { text: 'Continue Shopping', style: 'cancel' },
         { text: 'View Cart', onPress: () => router.push('/(tabs)/cart') },
       ]
     );
@@ -180,123 +240,289 @@ export default function ProfileScreen() {
     Alert.alert('Added to Cart', `"${book.title}" added to your cart!`);
   };
 
-  // Sign out confirmation
-  const handleLogoutConfirm = () => {
-    Alert.alert('Sign Out', 'Are you sure you want to sign out of your customer account?', [
+  // Logout confirmation
+  const handleLogout = () => {
+    Alert.alert('Sign Out', 'Are you sure you want to sign out of your Shopify account?', [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Sign Out', style: 'destructive', onPress: () => logout() },
+      {
+        text: 'Sign Out',
+        style: 'destructive',
+        onPress: () => logout(),
+      },
     ]);
   };
 
   // -------------------------------------------------------------
-  // Render: Not Authenticated (Customer Sign In State)
+  // RENDER: NOT AUTHENTICATED (Native Shopify Login / Register)
   // -------------------------------------------------------------
   if (!isAuthenticated || !customer) {
     return (
       <SafeAreaView style={styles.safeArea}>
-        <Header title="Customer Account" showBack={false} showCart />
+        <Header title="Account" showBack={false} showCart />
 
         <ScrollView
           style={styles.scrollView}
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
         >
-          {/* Welcome Banner */}
-          <View style={styles.guestHeroCard}>
-            <View style={styles.guestIconCircle}>
-              <Ionicons name="book-outline" size={38} color={colors.primary} />
+          <View style={styles.authContainer}>
+            {/* Header Icon */}
+            <View style={styles.authHeaderBox}>
+              <View style={styles.authIconCircle}>
+                <Ionicons name="person-outline" size={32} color={colors.primary} />
+              </View>
+              <Text style={styles.authHeading}>Customer Account</Text>
+              <Text style={styles.authSubheading}>
+                Sign in or register to manage your orders, delivery addresses, and saved books.
+              </Text>
             </View>
-            <Text style={styles.guestTitle}>Welcome to BookStore</Text>
-            <Text style={styles.guestSubtitle}>
-              Sign in to track your book orders, manage shipping addresses, and save favorites to
-              your reading wishlist.
-            </Text>
 
-            {/* Shopify OAuth Customer Account Login */}
+            {/* Mode Switcher */}
+            <View style={styles.authModeSwitcher}>
+              <TouchableOpacity
+                style={[styles.authModeBtn, authMode === 'login' && styles.authModeBtnActive]}
+                onPress={() => {
+                  setAuthMode('login');
+                  setAuthError(null);
+                  setAuthSuccessMsg(null);
+                }}
+                activeOpacity={0.8}
+              >
+                <Text
+                  style={[
+                    styles.authModeBtnText,
+                    authMode === 'login' && styles.authModeBtnTextActive,
+                  ]}
+                >
+                  Sign In
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.authModeBtn, authMode === 'register' && styles.authModeBtnActive]}
+                onPress={() => {
+                  setAuthMode('register');
+                  setAuthError(null);
+                  setAuthSuccessMsg(null);
+                }}
+                activeOpacity={0.8}
+              >
+                <Text
+                  style={[
+                    styles.authModeBtnText,
+                    authMode === 'register' && styles.authModeBtnTextActive,
+                  ]}
+                >
+                  Create Account
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Error Message */}
+            {authError ? (
+              <View style={styles.errorBanner}>
+                <Ionicons name="alert-circle" size={18} color={colors.error} />
+                <Text style={styles.errorBannerText}>{authError}</Text>
+              </View>
+            ) : null}
+
+            {/* Success Message */}
+            {authSuccessMsg ? (
+              <View style={styles.successBanner}>
+                <Ionicons name="checkmark-circle" size={18} color={colors.success} />
+                <Text style={styles.successBannerText}>{authSuccessMsg}</Text>
+              </View>
+            ) : null}
+
+            {/* 1. SIGN IN FORM */}
+            {authMode === 'login' && (
+              <View style={styles.formCard}>
+                <Text style={styles.inputLabel}>Email Address</Text>
+                <TextInput
+                  style={styles.inputField}
+                  value={email}
+                  onChangeText={setEmail}
+                  placeholder="your.email@example.com"
+                  placeholderTextColor={colors.textMuted}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+
+                <Text style={styles.inputLabel}>Password</Text>
+                <View style={styles.passwordInputWrapper}>
+                  <TextInput
+                    style={styles.passwordField}
+                    value={password}
+                    onChangeText={setPassword}
+                    placeholder="Enter your password"
+                    placeholderTextColor={colors.textMuted}
+                    secureTextEntry={!showPassword}
+                    autoCapitalize="none"
+                  />
+                  <TouchableOpacity
+                    style={styles.eyeBtn}
+                    onPress={() => setShowPassword(!showPassword)}
+                  >
+                    <Ionicons
+                      name={showPassword ? 'eye-off-outline' : 'eye-outline'}
+                      size={20}
+                      color={colors.textMuted}
+                    />
+                  </TouchableOpacity>
+                </View>
+
+                <TouchableOpacity
+                  style={styles.forgotPassLink}
+                  onPress={() => {
+                    setAuthMode('forgot');
+                    setAuthError(null);
+                    setAuthSuccessMsg(null);
+                  }}
+                >
+                  <Text style={styles.forgotPassText}>Forgot your password?</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.submitBtn}
+                  onPress={handleLogin}
+                  disabled={isLoading}
+                  activeOpacity={0.88}
+                >
+                  {isLoading ? (
+                    <ActivityIndicator color={colors.textInverse} size="small" />
+                  ) : (
+                    <Text style={styles.submitBtnText}>Sign In</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {/* 2. CREATE ACCOUNT FORM */}
+            {authMode === 'register' && (
+              <View style={styles.formCard}>
+                <View style={styles.nameRow}>
+                  <View style={{ flex: 1, marginRight: spacing.sm }}>
+                    <Text style={styles.inputLabel}>First Name</Text>
+                    <TextInput
+                      style={styles.inputField}
+                      value={firstName}
+                      onChangeText={setFirstName}
+                      placeholder="John"
+                      placeholderTextColor={colors.textMuted}
+                    />
+                  </View>
+                  <View style={{ flex: 1, marginLeft: spacing.sm }}>
+                    <Text style={styles.inputLabel}>Last Name</Text>
+                    <TextInput
+                      style={styles.inputField}
+                      value={lastName}
+                      onChangeText={setLastName}
+                      placeholder="Doe"
+                      placeholderTextColor={colors.textMuted}
+                    />
+                  </View>
+                </View>
+
+                <Text style={styles.inputLabel}>Email Address</Text>
+                <TextInput
+                  style={styles.inputField}
+                  value={email}
+                  onChangeText={setEmail}
+                  placeholder="your.email@example.com"
+                  placeholderTextColor={colors.textMuted}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+
+                <Text style={styles.inputLabel}>Password</Text>
+                <View style={styles.passwordInputWrapper}>
+                  <TextInput
+                    style={styles.passwordField}
+                    value={password}
+                    onChangeText={setPassword}
+                    placeholder="Create a password (min 5 characters)"
+                    placeholderTextColor={colors.textMuted}
+                    secureTextEntry={!showPassword}
+                    autoCapitalize="none"
+                  />
+                  <TouchableOpacity
+                    style={styles.eyeBtn}
+                    onPress={() => setShowPassword(!showPassword)}
+                  >
+                    <Ionicons
+                      name={showPassword ? 'eye-off-outline' : 'eye-outline'}
+                      size={20}
+                      color={colors.textMuted}
+                    />
+                  </TouchableOpacity>
+                </View>
+
+                <TouchableOpacity
+                  style={styles.submitBtn}
+                  onPress={handleRegister}
+                  disabled={isLoading}
+                  activeOpacity={0.88}
+                >
+                  {isLoading ? (
+                    <ActivityIndicator color={colors.textInverse} size="small" />
+                  ) : (
+                    <Text style={styles.submitBtnText}>Create Account</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {/* 3. FORGOT PASSWORD FORM */}
+            {authMode === 'forgot' && (
+              <View style={styles.formCard}>
+                <Text style={styles.inputLabel}>Enter Registered Email</Text>
+                <TextInput
+                  style={styles.inputField}
+                  value={email}
+                  onChangeText={setEmail}
+                  placeholder="your.email@example.com"
+                  placeholderTextColor={colors.textMuted}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                />
+
+                <TouchableOpacity
+                  style={styles.submitBtn}
+                  onPress={handleForgotPassword}
+                  disabled={isLoading}
+                  activeOpacity={0.88}
+                >
+                  {isLoading ? (
+                    <ActivityIndicator color={colors.textInverse} size="small" />
+                  ) : (
+                    <Text style={styles.submitBtnText}>Send Reset Link</Text>
+                  )}
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.backToLoginBtn}
+                  onPress={() => {
+                    setAuthMode('login');
+                    setAuthError(null);
+                    setAuthSuccessMsg(null);
+                  }}
+                >
+                  <Ionicons name="arrow-back" size={16} color={colors.primary} />
+                  <Text style={styles.backToLoginText}>Back to Sign In</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {/* Support Link */}
             <TouchableOpacity
-              style={styles.shopifyLoginButton}
-              onPress={loginWithShopify}
-              activeOpacity={0.88}
-              disabled={isLoading}
-            >
-              {isLoading ? (
-                <ActivityIndicator color={colors.textInverse} size="small" />
-              ) : (
-                <>
-                  <Ionicons name="bag-handle" size={20} color={colors.textInverse} />
-                  <Text style={styles.shopifyLoginText}>Sign In with Shopify Account</Text>
-                </>
-              )}
-            </TouchableOpacity>
-
-            {/* Demo / One-Click Customer Login */}
-            <TouchableOpacity
-              style={styles.demoLoginButton}
-              onPress={loginAsGuestOrDemo}
-              activeOpacity={0.7}
-            >
-              <Ionicons name="person-circle-outline" size={18} color={colors.primary} />
-              <Text style={styles.demoLoginText}>Quick Sign In as VIP Reader Member</Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* Member Benefits Grid */}
-          <Text style={styles.perksSectionTitle}>Why Join Reader Rewards?</Text>
-
-          <View style={styles.perksGrid}>
-            <View style={styles.perkCard}>
-              <View style={[styles.perkIconWrapper, { backgroundColor: '#E0F2FE' }]}>
-                <Ionicons name="airplane-outline" size={22} color="#0284C7" />
-              </View>
-              <Text style={styles.perkCardTitle}>Live Order Tracking</Text>
-              <Text style={styles.perkCardDesc}>
-                Real-time shipping notifications and doorstep parcel tracking.
-              </Text>
-            </View>
-
-            <View style={styles.perkCard}>
-              <View style={[styles.perkIconWrapper, { backgroundColor: '#FEF3C7' }]}>
-                <Ionicons name="heart-outline" size={22} color={colors.accentDark} />
-              </View>
-              <Text style={styles.perkCardTitle}>Curated Wishlist</Text>
-              <Text style={styles.perkCardDesc}>
-                Save favorite authors, upcoming titles, and reading queues.
-              </Text>
-            </View>
-
-            <View style={styles.perkCard}>
-              <View style={[styles.perkIconWrapper, { backgroundColor: '#DCFCE7' }]}>
-                <Ionicons name="ribbon-outline" size={22} color="#16A34A" />
-              </View>
-              <Text style={styles.perkCardTitle}>Bookworm Rewards</Text>
-              <Text style={styles.perkCardDesc}>
-                Earn 5 points for every $1 spent and redeem exclusive gift cards.
-              </Text>
-            </View>
-
-            <View style={styles.perkCard}>
-              <View style={[styles.perkIconWrapper, { backgroundColor: '#F3E8FF' }]}>
-                <Ionicons name="flash-outline" size={22} color="#9333EA" />
-              </View>
-              <Text style={styles.perkCardTitle}>1-Tap Express Checkout</Text>
-              <Text style={styles.perkCardDesc}>
-                Store verified shipping addresses for swift and seamless ordering.
-              </Text>
-            </View>
-          </View>
-
-          {/* Quick Help & FAQ */}
-          <View style={styles.menuGroup}>
-            <TouchableOpacity
-              style={styles.menuItem}
+              style={styles.supportLinkRow}
               onPress={() => router.push('/contact')}
-              activeOpacity={0.7}
             >
-              <View style={styles.menuLeft}>
-                <Ionicons name="help-buoy-outline" size={20} color={colors.primary} />
-                <Text style={styles.menuText}>Help Center & Store FAQ</Text>
-              </View>
-              <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+              <Ionicons name="help-circle-outline" size={18} color={colors.textSecondary} />
+              <Text style={styles.supportLinkText}>Need help? Contact Bookstore Support</Text>
             </TouchableOpacity>
           </View>
         </ScrollView>
@@ -308,7 +534,7 @@ export default function ProfileScreen() {
   const wishlistBooks = MOCK_BOOKS.filter((book) => wishlistProductIds.includes(book.id));
 
   // -------------------------------------------------------------
-  // Render: Authenticated Customer Profile & Hub
+  // RENDER: AUTHENTICATED CUSTOMER (Real Shopify Customer Profile)
   // -------------------------------------------------------------
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -319,50 +545,28 @@ export default function ProfileScreen() {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        {/* Customer Header Profile Card */}
-        <View style={styles.profileHeaderCard}>
-          <View style={styles.profileTopRow}>
-            <View style={styles.avatarCircle}>
-              <Text style={styles.avatarInitials}>
-                {customer.firstName[0]}
-                {customer.lastName[0]}
-              </Text>
-            </View>
-            <View style={styles.profileTextCol}>
-              <View style={styles.nameRow}>
-                <Text style={styles.profileName}>{customer.displayName}</Text>
-                <View style={styles.tierPill}>
-                  <Text style={styles.tierPillText}>{customer.memberTier}</Text>
-                </View>
-              </View>
-              <Text style={styles.profileEmail}>{customer.email}</Text>
-              {customer.phone ? <Text style={styles.profilePhone}>{customer.phone}</Text> : null}
-            </View>
+        {/* Real Customer Banner */}
+        <View style={styles.customerHeaderCard}>
+          <View style={styles.customerAvatar}>
+            <Text style={styles.customerAvatarText}>
+              {customer.firstName ? customer.firstName[0].toUpperCase() : ''}
+              {customer.lastName ? customer.lastName[0].toUpperCase() : customer.email[0].toUpperCase()}
+            </Text>
           </View>
 
-          {/* Reader Points Banner */}
-          <View style={styles.pointsBanner}>
-            <View style={styles.pointsLeft}>
-              <Ionicons name="sparkles" size={18} color={colors.accent} />
-              <View style={{ marginLeft: spacing.sm }}>
-                <Text style={styles.pointsTitle}>{customer.points} Reader Points</Text>
-                <Text style={styles.pointsSubtitle}>$15 Bookstore Reward Voucher Ready</Text>
-              </View>
-            </View>
-            <TouchableOpacity
-              style={styles.redeemButton}
-              onPress={() => Alert.alert('Rewards', 'Points voucher applied automatically at checkout!')}
-              activeOpacity={0.8}
-            >
-              <Text style={styles.redeemButtonText}>Redeem</Text>
-            </TouchableOpacity>
+          <View style={styles.customerInfoCol}>
+            <Text style={styles.customerDisplayName}>{customer.displayName}</Text>
+            <Text style={styles.customerEmailText}>{customer.email}</Text>
+            {customer.phone ? (
+              <Text style={styles.customerPhoneText}>{customer.phone}</Text>
+            ) : null}
           </View>
         </View>
 
-        {/* Customer Segmented Navigation Tabs */}
-        <View style={styles.segmentedTabBar}>
+        {/* Tab Switcher */}
+        <View style={styles.profileTabBar}>
           <TouchableOpacity
-            style={[styles.segmentTab, activeTab === 'orders' && styles.segmentTabActive]}
+            style={[styles.profileTabBtn, activeTab === 'orders' && styles.profileTabBtnActive]}
             onPress={() => setActiveTab('orders')}
             activeOpacity={0.8}
           >
@@ -373,8 +577,8 @@ export default function ProfileScreen() {
             />
             <Text
               style={[
-                styles.segmentTabText,
-                activeTab === 'orders' && styles.segmentTabTextActive,
+                styles.profileTabText,
+                activeTab === 'orders' && styles.profileTabTextActive,
               ]}
             >
               Orders ({customer.orders.length})
@@ -382,7 +586,7 @@ export default function ProfileScreen() {
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.segmentTab, activeTab === 'addresses' && styles.segmentTabActive]}
+            style={[styles.profileTabBtn, activeTab === 'addresses' && styles.profileTabBtnActive]}
             onPress={() => setActiveTab('addresses')}
             activeOpacity={0.8}
           >
@@ -393,16 +597,16 @@ export default function ProfileScreen() {
             />
             <Text
               style={[
-                styles.segmentTabText,
-                activeTab === 'addresses' && styles.segmentTabTextActive,
+                styles.profileTabText,
+                activeTab === 'addresses' && styles.profileTabTextActive,
               ]}
             >
-              Addresses
+              Addresses ({customer.addresses.length})
             </Text>
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.segmentTab, activeTab === 'wishlist' && styles.segmentTabActive]}
+            style={[styles.profileTabBtn, activeTab === 'wishlist' && styles.profileTabBtnActive]}
             onPress={() => setActiveTab('wishlist')}
             activeOpacity={0.8}
           >
@@ -413,141 +617,113 @@ export default function ProfileScreen() {
             />
             <Text
               style={[
-                styles.segmentTabText,
-                activeTab === 'wishlist' && styles.segmentTabTextActive,
+                styles.profileTabText,
+                activeTab === 'wishlist' && styles.profileTabTextActive,
               ]}
             >
               Wishlist ({wishlistBooks.length})
             </Text>
           </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.segmentTab, activeTab === 'settings' && styles.segmentTabActive]}
-            onPress={() => setActiveTab('settings')}
-            activeOpacity={0.8}
-          >
-            <Ionicons
-              name={activeTab === 'settings' ? 'settings' : 'settings-outline'}
-              size={18}
-              color={activeTab === 'settings' ? colors.primary : colors.textMuted}
-            />
-            <Text
-              style={[
-                styles.segmentTabText,
-                activeTab === 'settings' && styles.segmentTabTextActive,
-              ]}
-            >
-              Settings
-            </Text>
-          </TouchableOpacity>
         </View>
 
-        {/* ------------------------------------------------------------- */}
-        {/* TAB 1: ORDERS & PARCEL TRACKING                                */}
-        {/* ------------------------------------------------------------- */}
+        {/* --------------------------------------------------------- */}
+        {/* TAB 1: REAL ORDERS FROM SHOPIFY                           */}
+        {/* --------------------------------------------------------- */}
         {activeTab === 'orders' && (
-          <View style={styles.tabContentContainer}>
+          <View style={styles.tabContainer}>
             {customer.orders.length === 0 ? (
               <View style={styles.emptyCard}>
-                <Ionicons name="basket-outline" size={48} color={colors.textMuted} />
+                <Ionicons name="bag-handle-outline" size={48} color={colors.textMuted} />
                 <Text style={styles.emptyTitle}>No Orders Yet</Text>
                 <Text style={styles.emptySubtitle}>
-                  You haven't placed any book orders yet. Browse our literary catalog to find your
-                  next favorite read!
+                  You haven't placed any orders yet. Once you complete a purchase, your order history
+                  and live status will appear here.
                 </Text>
                 <TouchableOpacity
                   style={styles.emptyActionBtn}
                   onPress={() => router.push('/(tabs)')}
                 >
-                  <Text style={styles.emptyActionBtnText}>Explore Books</Text>
+                  <Text style={styles.emptyActionBtnText}>Browse Bookstore</Text>
                 </TouchableOpacity>
               </View>
             ) : (
               customer.orders.map((order) => {
-                const isDelivered = order.fulfillmentStatus === 'FULFILLED';
-                const isInTransit = order.fulfillmentStatus === 'IN_TRANSIT';
+                const isPaid = order.financialStatus === 'PAID';
+                const isFulfilled = order.fulfillmentStatus === 'FULFILLED';
 
                 return (
                   <View key={order.id} style={styles.orderCard}>
-                    {/* Order Header */}
-                    <View style={styles.orderCardHeader}>
+                    <View style={styles.orderCardTop}>
                       <View>
-                        <Text style={styles.orderNumberText}>{order.name}</Text>
+                        <Text style={styles.orderNameText}>{order.name}</Text>
                         <Text style={styles.orderDateText}>
                           {new Date(order.processedAt).toLocaleDateString('en-US', {
+                            year: 'numeric',
                             month: 'short',
                             day: 'numeric',
-                            year: 'numeric',
                           })}
                         </Text>
                       </View>
-                      <View style={styles.orderRightHeader}>
+                      <View style={{ alignItems: 'flex-end' }}>
                         <Text style={styles.orderTotalText}>
                           {formatCurrency(order.totalPrice, order.currencyCode)}
                         </Text>
-                        <View
-                          style={[
-                            styles.statusPill,
-                            isDelivered
-                              ? styles.statusPillSuccess
-                              : isInTransit
-                              ? styles.statusPillTransit
-                              : styles.statusPillPending,
-                          ]}
-                        >
-                          <Ionicons
-                            name={
-                              isDelivered
-                                ? 'checkmark-circle'
-                                : isInTransit
-                                ? 'car-outline'
-                                : 'time-outline'
-                            }
-                            size={12}
-                            color={
-                              isDelivered
-                                ? colors.success
-                                : isInTransit
-                                ? '#2563EB'
-                                : colors.warning
-                            }
-                          />
-                          <Text
+                        <View style={styles.statusPillsRow}>
+                          <View
                             style={[
-                              styles.statusPillText,
-                              isDelivered
-                                ? styles.statusTextSuccess
-                                : isInTransit
-                                ? styles.statusTextTransit
-                                : styles.statusTextPending,
+                              styles.statusPill,
+                              isPaid ? styles.statusPillSuccess : styles.statusPillWarning,
                             ]}
                           >
-                            {order.estimatedDelivery || (isDelivered ? 'Delivered' : 'Processing')}
-                          </Text>
+                            <Text
+                              style={[
+                                styles.statusPillText,
+                                isPaid ? styles.statusTextSuccess : styles.statusTextWarning,
+                              ]}
+                            >
+                              {order.financialStatus}
+                            </Text>
+                          </View>
+                          <View
+                            style={[
+                              styles.statusPill,
+                              isFulfilled ? styles.statusPillSuccess : styles.statusPillInfo,
+                              { marginLeft: 4 },
+                            ]}
+                          >
+                            <Text
+                              style={[
+                                styles.statusPillText,
+                                isFulfilled ? styles.statusTextSuccess : styles.statusTextInfo,
+                              ]}
+                            >
+                              {order.fulfillmentStatus || 'UNFULFILLED'}
+                            </Text>
+                          </View>
                         </View>
                       </View>
                     </View>
 
                     {/* Order Line Items */}
-                    <View style={styles.orderLineItemsWrapper}>
+                    <View style={styles.orderLineItemsList}>
                       {order.lineItems.map((item) => (
                         <View key={item.id} style={styles.orderLineItem}>
                           {item.imageUrl ? (
                             <Image
                               source={{ uri: item.imageUrl }}
-                              style={styles.orderBookThumb}
+                              style={styles.orderItemImage}
                               resizeMode="cover"
                             />
                           ) : (
-                            <View style={styles.orderBookPlaceholder}>
-                              <Ionicons name="book" size={16} color={colors.textMuted} />
+                            <View style={styles.orderItemImagePlaceholder}>
+                              <Ionicons name="book-outline" size={16} color={colors.textMuted} />
                             </View>
                           )}
-                          <View style={styles.orderLineItemInfo}>
-                            <Text style={styles.orderLineItemTitle} numberOfLines={1}>
+                          <View style={styles.orderItemInfoCol}>
+                            <Text style={styles.orderItemTitle} numberOfLines={1}>
                               {item.title}
                             </Text>
-                            <Text style={styles.orderLineItemSub}>
+                            <Text style={styles.orderItemSub}>
                               Qty: {item.quantity} • {formatCurrency(item.price, order.currencyCode)}
                             </Text>
                           </View>
@@ -555,24 +731,15 @@ export default function ProfileScreen() {
                       ))}
                     </View>
 
-                    {/* Order Action Buttons */}
-                    <View style={styles.orderActionRow}>
+                    {/* Reorder Button */}
+                    <View style={styles.orderCardFooter}>
                       <TouchableOpacity
-                        style={styles.trackButton}
-                        onPress={() => setTrackingOrder(order)}
-                        activeOpacity={0.8}
-                      >
-                        <Ionicons name="location-outline" size={15} color={colors.primary} />
-                        <Text style={styles.trackButtonText}>Track Parcel</Text>
-                      </TouchableOpacity>
-
-                      <TouchableOpacity
-                        style={styles.reorderButton}
+                        style={styles.reorderBtn}
                         onPress={() => handleReorder(order)}
                         activeOpacity={0.8}
                       >
                         <Ionicons name="refresh-outline" size={15} color={colors.textInverse} />
-                        <Text style={styles.reorderButtonText}>Buy Again</Text>
+                        <Text style={styles.reorderBtnText}>Reorder</Text>
                       </TouchableOpacity>
                     </View>
                   </View>
@@ -582,94 +749,103 @@ export default function ProfileScreen() {
           </View>
         )}
 
-        {/* ------------------------------------------------------------- */}
-        {/* TAB 2: SAVED ADDRESSES                                        */}
-        {/* ------------------------------------------------------------- */}
+        {/* --------------------------------------------------------- */}
+        {/* TAB 2: REAL ADDRESSES FROM SHOPIFY                        */}
+        {/* --------------------------------------------------------- */}
         {activeTab === 'addresses' && (
-          <View style={styles.tabContentContainer}>
-            <View style={styles.tabSectionHeaderRow}>
-              <Text style={styles.tabSectionTitle}>Delivery Addresses</Text>
+          <View style={styles.tabContainer}>
+            <View style={styles.addressSectionHeader}>
+              <Text style={styles.addressSectionTitle}>Shipping Addresses</Text>
               <TouchableOpacity
                 style={styles.addAddressHeaderBtn}
-                onPress={openNewAddressModal}
-                activeOpacity={0.7}
+                onPress={() => setIsAddressModalOpen(true)}
+                activeOpacity={0.8}
               >
                 <Ionicons name="add" size={16} color={colors.textInverse} />
                 <Text style={styles.addAddressHeaderBtnText}>Add Address</Text>
               </TouchableOpacity>
             </View>
 
-            {customer.addresses.map((addr) => (
-              <View key={addr.id} style={styles.addressCard}>
-                <View style={styles.addressTopRow}>
-                  <View style={styles.addressTitleRow}>
-                    <Text style={styles.addressRecipientName}>{addr.name}</Text>
-                    {addr.isDefault ? (
-                      <View style={styles.defaultAddressBadge}>
-                        <Text style={styles.defaultAddressBadgeText}>DEFAULT</Text>
-                      </View>
-                    ) : null}
-                  </View>
-                  <TouchableOpacity
-                    style={styles.editAddressIconBtn}
-                    onPress={() => openEditAddressModal(addr)}
-                  >
-                    <Ionicons name="create-outline" size={18} color={colors.primary} />
-                  </TouchableOpacity>
-                </View>
-
-                <Text style={styles.addressStreetText}>{addr.address1}</Text>
-                {addr.address2 ? <Text style={styles.addressStreetText}>{addr.address2}</Text> : null}
-                <Text style={styles.addressCityZipText}>
-                  {addr.city}, {addr.province} {addr.zip}
+            {customer.addresses.length === 0 ? (
+              <View style={styles.emptyCard}>
+                <Ionicons name="location-outline" size={48} color={colors.textMuted} />
+                <Text style={styles.emptyTitle}>No Addresses Saved</Text>
+                <Text style={styles.emptySubtitle}>
+                  Add your shipping address for fast and seamless checkout on your future orders.
                 </Text>
-                <Text style={styles.addressCountryText}>{addr.country}</Text>
-                {addr.phone ? (
-                  <Text style={styles.addressPhoneText}>Phone: {addr.phone}</Text>
-                ) : null}
-
-                <View style={styles.addressCardFooter}>
-                  {!addr.isDefault ? (
-                    <TouchableOpacity
-                      style={styles.setDefaultBtn}
-                      onPress={() => setDefaultAddress(addr.id)}
-                    >
-                      <Text style={styles.setDefaultBtnText}>Set as Default</Text>
-                    </TouchableOpacity>
-                  ) : null}
-
-                  {customer.addresses.length > 1 ? (
-                    <TouchableOpacity
-                      style={styles.deleteAddressBtn}
-                      onPress={() => deleteAddress(addr.id)}
-                    >
-                      <Ionicons name="trash-outline" size={16} color={colors.error} />
-                      <Text style={styles.deleteAddressBtnText}>Delete</Text>
-                    </TouchableOpacity>
-                  ) : null}
-                </View>
+                <TouchableOpacity
+                  style={styles.emptyActionBtn}
+                  onPress={() => setIsAddressModalOpen(true)}
+                >
+                  <Text style={styles.emptyActionBtnText}>Add New Address</Text>
+                </TouchableOpacity>
               </View>
-            ))}
+            ) : (
+              customer.addresses.map((addr) => (
+                <View key={addr.id} style={styles.addressCard}>
+                  <View style={styles.addressCardTop}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                      <Text style={styles.addressStreet}>{addr.address1}</Text>
+                      {addr.isDefault ? (
+                        <View style={styles.defaultBadge}>
+                          <Text style={styles.defaultBadgeText}>DEFAULT</Text>
+                        </View>
+                      ) : null}
+                    </View>
+                  </View>
+
+                  {addr.address2 ? (
+                    <Text style={styles.addressLine}>{addr.address2}</Text>
+                  ) : null}
+                  <Text style={styles.addressLine}>
+                    {addr.city}, {addr.province} {addr.zip}
+                  </Text>
+                  <Text style={styles.addressCountry}>{addr.country}</Text>
+                  {addr.phone ? (
+                    <Text style={styles.addressPhone}>Phone: {addr.phone}</Text>
+                  ) : null}
+
+                  <View style={styles.addressCardFooter}>
+                    {!addr.isDefault ? (
+                      <TouchableOpacity
+                        style={styles.setDefaultLink}
+                        onPress={() => setDefaultAddress(addr.id)}
+                      >
+                        <Text style={styles.setDefaultLinkText}>Set as Default</Text>
+                      </TouchableOpacity>
+                    ) : null}
+
+                    <TouchableOpacity
+                      style={styles.deleteAddressLink}
+                      onPress={() => handleDeleteAddress(addr.id)}
+                    >
+                      <Ionicons name="trash-outline" size={15} color={colors.error} />
+                      <Text style={styles.deleteAddressLinkText}>Delete</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              ))
+            )}
           </View>
         )}
 
-        {/* ------------------------------------------------------------- */}
-        {/* TAB 3: WISHLIST & SAVED BOOKS                                  */}
-        {/* ------------------------------------------------------------- */}
+        {/* --------------------------------------------------------- */}
+        {/* TAB 3: WISHLIST                                           */}
+        {/* --------------------------------------------------------- */}
         {activeTab === 'wishlist' && (
-          <View style={styles.tabContentContainer}>
+          <View style={styles.tabContainer}>
             {wishlistBooks.length === 0 ? (
               <View style={styles.emptyCard}>
                 <Ionicons name="heart-dislike-outline" size={48} color={colors.textMuted} />
                 <Text style={styles.emptyTitle}>Wishlist is Empty</Text>
                 <Text style={styles.emptySubtitle}>
-                  Save books to your reading list while browsing to keep track of titles you love.
+                  Save titles while browsing our catalog to keep track of books you want to read.
                 </Text>
                 <TouchableOpacity
                   style={styles.emptyActionBtn}
                   onPress={() => router.push('/(tabs)')}
                 >
-                  <Text style={styles.emptyActionBtnText}>Browse Bookstore</Text>
+                  <Text style={styles.emptyActionBtnText}>Browse Catalog</Text>
                 </TouchableOpacity>
               </View>
             ) : (
@@ -682,17 +858,17 @@ export default function ProfileScreen() {
                     {cover ? (
                       <Image
                         source={{ uri: cover }}
-                        style={styles.wishlistCoverImage}
+                        style={styles.wishlistCover}
                         resizeMode="cover"
                       />
                     ) : (
                       <View style={styles.wishlistCoverPlaceholder}>
-                        <Ionicons name="book" size={24} color={colors.textMuted} />
+                        <Ionicons name="book-outline" size={24} color={colors.textMuted} />
                       </View>
                     )}
 
                     <View style={styles.wishlistInfoCol}>
-                      <Text style={styles.wishlistVendor}>{book.vendor}</Text>
+                      <Text style={styles.wishlistAuthor}>{book.vendor}</Text>
                       <Text style={styles.wishlistTitle} numberOfLines={2}>
                         {book.title}
                       </Text>
@@ -724,196 +900,53 @@ export default function ProfileScreen() {
           </View>
         )}
 
-        {/* ------------------------------------------------------------- */}
-        {/* TAB 4: ACCOUNT SETTINGS & PREFERENCES                          */}
-        {/* ------------------------------------------------------------- */}
-        {activeTab === 'settings' && (
-          <View style={styles.tabContentContainer}>
-            {/* Notifications Card */}
-            <View style={styles.sectionCard}>
-              <Text style={styles.sectionHeaderTitle}>Notifications & Alerts</Text>
-
-              <View style={styles.toggleRow}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.toggleTitle}>Order Status Updates</Text>
-                  <Text style={styles.toggleSubtitle}>
-                    Receive shipping alerts and delivery status notifications
-                  </Text>
-                </View>
-                <Switch
-                  value={orderAlerts}
-                  onValueChange={setOrderAlerts}
-                  trackColor={{ false: colors.border, true: colors.primaryLight }}
-                  thumbColor={orderAlerts ? colors.primary : '#f4f3f4'}
-                />
-              </View>
-
-              <View style={styles.divider} />
-
-              <View style={styles.toggleRow}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.toggleTitle}>Book Club & Author Drops</Text>
-                  <Text style={styles.toggleSubtitle}>
-                    Weekly editorial recommendations and exclusive member sales
-                  </Text>
-                </View>
-                <Switch
-                  value={promoAlerts}
-                  onValueChange={setPromoAlerts}
-                  trackColor={{ false: colors.border, true: colors.primaryLight }}
-                  thumbColor={promoAlerts ? colors.primary : '#f4f3f4'}
-                />
-              </View>
-            </View>
-
-            {/* Customer Care & Store Policies */}
-            <View style={styles.menuGroup}>
-              <TouchableOpacity
-                style={styles.menuItem}
-                onPress={() => router.push('/contact')}
-                activeOpacity={0.7}
-              >
-                <View style={styles.menuLeft}>
-                  <Ionicons name="headset-outline" size={20} color={colors.primary} />
-                  <Text style={styles.menuText}>Contact Literary Support</Text>
-                </View>
-                <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
-              </TouchableOpacity>
-
-              <View style={styles.menuDivider} />
-
-              <TouchableOpacity
-                style={styles.menuItem}
-                onPress={() => router.push('/(tabs)/cart')}
-                activeOpacity={0.7}
-              >
-                <View style={styles.menuLeft}>
-                  <Ionicons name="bag-handle-outline" size={20} color={colors.primary} />
-                  <Text style={styles.menuText}>View Active Cart</Text>
-                </View>
-                <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
-              </TouchableOpacity>
-
-              <View style={styles.menuDivider} />
-
-              <TouchableOpacity
-                style={styles.menuItem}
-                onPress={() => {
-                  clearCart();
-                  Alert.alert('Done', 'Cart and local caching reset.');
-                }}
-                activeOpacity={0.7}
-              >
-                <View style={styles.menuLeft}>
-                  <Ionicons name="trash-bin-outline" size={20} color={colors.textSecondary} />
-                  <Text style={styles.menuText}>Clear Cart Storage</Text>
-                </View>
-                <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
-              </TouchableOpacity>
-            </View>
-
-            {/* Collapsed Shopify API Diagnostics (Accessible for dev/verification, hidden for customer) */}
-            <View style={styles.sectionCard}>
-              <TouchableOpacity
-                style={styles.devToggleRow}
-                onPress={() => setShowDevInfo(!showDevInfo)}
-                activeOpacity={0.7}
-              >
-                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                  <Ionicons name="code-slash-outline" size={16} color={colors.textMuted} />
-                  <Text style={styles.devToggleTitle}>Shopify Customer Account API Details</Text>
-                </View>
-                <Ionicons
-                  name={showDevInfo ? 'chevron-up' : 'chevron-down'}
-                  size={16}
-                  color={colors.textMuted}
-                />
-              </TouchableOpacity>
-
-              {showDevInfo ? (
-                <View style={{ marginTop: spacing.md }}>
-                  <View style={styles.metaRow}>
-                    <Text style={styles.metaLabel}>Shopify Store Domain</Text>
-                    <Text style={styles.metaValue}>{shopifyDomain}</Text>
-                  </View>
-                  <View style={styles.metaRow}>
-                    <Text style={styles.metaLabel}>Customer API Client ID</Text>
-                    <Text style={styles.metaValueMono}>{customerClientId.substring(0, 16)}...</Text>
-                  </View>
-                  <View style={styles.metaRow}>
-                    <Text style={styles.metaLabel}>Customer Protocol</Text>
-                    <Text style={styles.metaValue}>OAuth 2.0 / GraphQL 2026-07</Text>
-                  </View>
-                  <View style={styles.metaRow}>
-                    <Text style={styles.metaLabel}>Status</Text>
-                    <Text style={[styles.metaValue, { color: colors.success }]}>
-                      Connected & Ready
-                    </Text>
-                  </View>
-                </View>
-              ) : null}
-            </View>
-
-            {/* Sign Out Action Button */}
-            <TouchableOpacity
-              style={styles.logoutButton}
-              onPress={handleLogoutConfirm}
-              activeOpacity={0.8}
-            >
-              <Ionicons name="log-out-outline" size={18} color={colors.error} />
-              <Text style={styles.logoutButtonText}>Sign Out of Customer Account</Text>
-            </TouchableOpacity>
-          </View>
-        )}
+        {/* Sign Out Button */}
+        <TouchableOpacity
+          style={styles.logoutBtn}
+          onPress={handleLogout}
+          activeOpacity={0.8}
+        >
+          <Ionicons name="log-out-outline" size={18} color={colors.error} />
+          <Text style={styles.logoutBtnText}>Sign Out of Shopify Account</Text>
+        </TouchableOpacity>
       </ScrollView>
 
-      {/* ------------------------------------------------------------- */}
-      {/* MODAL: ADD / EDIT DELIVERY ADDRESS                             */}
-      {/* ------------------------------------------------------------- */}
+      {/* --------------------------------------------------------- */}
+      {/* MODAL: ADD DELIVERY ADDRESS TO SHOPIFY                    */}
+      {/* --------------------------------------------------------- */}
       <Modal
-        visible={isAddressModalVisible}
+        visible={isAddressModalOpen}
         animationType="slide"
         transparent
-        onRequestClose={() => setIsAddressModalVisible(false)}
+        onRequestClose={() => setIsAddressModalOpen(false)}
       >
-        <View style={styles.modalBackdrop}>
-          <View style={styles.modalCard}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>
-                {editingAddressId ? 'Edit Address' : 'New Delivery Address'}
-              </Text>
-              <TouchableOpacity onPress={() => setIsAddressModalVisible(false)}>
+              <Text style={styles.modalTitle}>New Shipping Address</Text>
+              <TouchableOpacity onPress={() => setIsAddressModalOpen(false)}>
                 <Ionicons name="close" size={24} color={colors.textPrimary} />
               </TouchableOpacity>
             </View>
 
-            <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 420 }}>
-              <Text style={styles.inputLabel}>Recipient Full Name</Text>
-              <TextInput
-                style={styles.inputField}
-                value={addrName}
-                onChangeText={setAddrName}
-                placeholder="e.g. Sarah Jenkins"
-                placeholderTextColor={colors.textMuted}
-              />
-
-              <Text style={styles.inputLabel}>Street Address</Text>
+            <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 380 }}>
+              <Text style={styles.inputLabel}>Street Address *</Text>
               <TextInput
                 style={styles.inputField}
                 value={addrStreet}
                 onChangeText={setAddrStreet}
-                placeholder="e.g. 742 Evergreen Terrace, Apt 4B"
+                placeholder="e.g. 123 Main Street"
                 placeholderTextColor={colors.textMuted}
               />
 
-              <View style={styles.inputRow}>
+              <View style={styles.nameRow}>
                 <View style={{ flex: 1, marginRight: spacing.sm }}>
-                  <Text style={styles.inputLabel}>City</Text>
+                  <Text style={styles.inputLabel}>City *</Text>
                   <TextInput
                     style={styles.inputField}
                     value={addrCity}
                     onChangeText={setAddrCity}
-                    placeholder="Seattle"
+                    placeholder="e.g. New York"
                     placeholderTextColor={colors.textMuted}
                   />
                 </View>
@@ -923,205 +956,57 @@ export default function ProfileScreen() {
                     style={styles.inputField}
                     value={addrProvince}
                     onChangeText={setAddrProvince}
-                    placeholder="WA"
+                    placeholder="e.g. NY"
                     placeholderTextColor={colors.textMuted}
                   />
                 </View>
               </View>
 
-              <View style={styles.inputRow}>
+              <View style={styles.nameRow}>
                 <View style={{ flex: 1, marginRight: spacing.sm }}>
-                  <Text style={styles.inputLabel}>Postal / ZIP Code</Text>
+                  <Text style={styles.inputLabel}>Postal / ZIP Code *</Text>
                   <TextInput
                     style={styles.inputField}
                     value={addrZip}
                     onChangeText={setAddrZip}
-                    placeholder="98101"
+                    placeholder="e.g. 10001"
                     placeholderTextColor={colors.textMuted}
                   />
                 </View>
                 <View style={{ flex: 1, marginLeft: spacing.sm }}>
-                  <Text style={styles.inputLabel}>Contact Phone</Text>
+                  <Text style={styles.inputLabel}>Phone Number</Text>
                   <TextInput
                     style={styles.inputField}
                     value={addrPhone}
                     onChangeText={setAddrPhone}
-                    placeholder="+1 (555) 000-0000"
+                    placeholder="+1 555-0100"
                     placeholderTextColor={colors.textMuted}
                   />
                 </View>
               </View>
-
-              <View style={[styles.toggleRow, { marginTop: spacing.md, paddingVertical: spacing.xs }]}>
-                <Text style={styles.toggleTitle}>Set as Default Shipping Address</Text>
-                <Switch
-                  value={addrIsDefault}
-                  onValueChange={setAddrIsDefault}
-                  trackColor={{ false: colors.border, true: colors.primaryLight }}
-                  thumbColor={addrIsDefault ? colors.primary : '#f4f3f4'}
-                />
-              </View>
             </ScrollView>
 
-            <View style={styles.modalFooterRow}>
+            <View style={styles.modalBtnRow}>
               <TouchableOpacity
                 style={styles.modalCancelBtn}
-                onPress={() => setIsAddressModalVisible(false)}
+                onPress={() => setIsAddressModalOpen(false)}
+                disabled={isSavingAddress}
               >
                 <Text style={styles.modalCancelBtnText}>Cancel</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.modalSaveBtn} onPress={handleSaveAddress}>
-                <Text style={styles.modalSaveBtnText}>Save Address</Text>
+
+              <TouchableOpacity
+                style={styles.modalSaveBtn}
+                onPress={handleSaveAddress}
+                disabled={isSavingAddress}
+              >
+                {isSavingAddress ? (
+                  <ActivityIndicator color={colors.textInverse} size="small" />
+                ) : (
+                  <Text style={styles.modalSaveBtnText}>Save Address</Text>
+                )}
               </TouchableOpacity>
             </View>
-          </View>
-        </View>
-      </Modal>
-
-      {/* ------------------------------------------------------------- */}
-      {/* MODAL: LIVE ORDER / PARCEL TRACKING                           */}
-      {/* ------------------------------------------------------------- */}
-      <Modal
-        visible={!!trackingOrder}
-        animationType="fade"
-        transparent
-        onRequestClose={() => setTrackingOrder(null)}
-      >
-        <View style={styles.modalBackdrop}>
-          <View style={styles.modalCard}>
-            <View style={styles.modalHeader}>
-              <View>
-                <Text style={styles.modalTitle}>Track Parcel</Text>
-                <Text style={styles.modalSubtitle}>Order {trackingOrder?.name}</Text>
-              </View>
-              <TouchableOpacity onPress={() => setTrackingOrder(null)}>
-                <Ionicons name="close" size={24} color={colors.textPrimary} />
-              </TouchableOpacity>
-            </View>
-
-            {trackingOrder && (
-              <View style={{ marginVertical: spacing.md }}>
-                <View style={styles.trackingCarrierBox}>
-                  <Ionicons name="cube-outline" size={20} color={colors.primary} />
-                  <View style={{ marginLeft: spacing.sm, flex: 1 }}>
-                    <Text style={styles.carrierTitle}>Express Book Courier</Text>
-                    <Text style={styles.carrierNumber}>
-                      Tracking: {trackingOrder.trackingNumber || '1Z9999999999999999'}
-                    </Text>
-                  </View>
-                  <View style={styles.statusPillTransit}>
-                    <Text style={styles.statusTextTransit}>
-                      {trackingOrder.fulfillmentStatus === 'FULFILLED'
-                        ? 'Delivered'
-                        : 'On the Way'}
-                    </Text>
-                  </View>
-                </View>
-
-                {/* Timeline Steps */}
-                <View style={styles.timelineContainer}>
-                  <View style={styles.timelineStep}>
-                    <View style={styles.timelineIconActive}>
-                      <Ionicons name="checkmark" size={14} color={colors.textInverse} />
-                    </View>
-                    <View style={styles.timelineTextCol}>
-                      <Text style={styles.timelineTitle}>Order Placed & Confirmed</Text>
-                      <Text style={styles.timelineTime}>Payment processed via Shopify</Text>
-                    </View>
-                  </View>
-
-                  <View style={styles.timelineConnectorActive} />
-
-                  <View style={styles.timelineStep}>
-                    <View style={styles.timelineIconActive}>
-                      <Ionicons name="checkmark" size={14} color={colors.textInverse} />
-                    </View>
-                    <View style={styles.timelineTextCol}>
-                      <Text style={styles.timelineTitle}>Packed at Bookstore Warehouse</Text>
-                      <Text style={styles.timelineTime}>Inspected & gift-wrapped with bookmark</Text>
-                    </View>
-                  </View>
-
-                  <View style={styles.timelineConnectorActive} />
-
-                  <View style={styles.timelineStep}>
-                    <View
-                      style={
-                        trackingOrder.fulfillmentStatus === 'FULFILLED'
-                          ? styles.timelineIconActive
-                          : styles.timelineIconTransit
-                      }
-                    >
-                      <Ionicons
-                        name={
-                          trackingOrder.fulfillmentStatus === 'FULFILLED' ? 'checkmark' : 'car'
-                        }
-                        size={14}
-                        color={colors.textInverse}
-                      />
-                    </View>
-                    <View style={styles.timelineTextCol}>
-                      <Text style={styles.timelineTitle}>In Transit with Courier</Text>
-                      <Text style={styles.timelineTime}>Arrived at regional delivery facility</Text>
-                    </View>
-                  </View>
-
-                  <View
-                    style={
-                      trackingOrder.fulfillmentStatus === 'FULFILLED'
-                        ? styles.timelineConnectorActive
-                        : styles.timelineConnectorPending
-                    }
-                  />
-
-                  <View style={styles.timelineStep}>
-                    <View
-                      style={
-                        trackingOrder.fulfillmentStatus === 'FULFILLED'
-                          ? styles.timelineIconActive
-                          : styles.timelineIconPending
-                      }
-                    >
-                      <Ionicons
-                        name={
-                          trackingOrder.fulfillmentStatus === 'FULFILLED'
-                            ? 'checkmark'
-                            : 'home-outline'
-                        }
-                        size={14}
-                        color={
-                          trackingOrder.fulfillmentStatus === 'FULFILLED'
-                            ? colors.textInverse
-                            : colors.textMuted
-                        }
-                      />
-                    </View>
-                    <View style={styles.timelineTextCol}>
-                      <Text
-                        style={[
-                          styles.timelineTitle,
-                          trackingOrder.fulfillmentStatus !== 'FULFILLED' && {
-                            color: colors.textMuted,
-                          },
-                        ]}
-                      >
-                        Delivered to Doorstep
-                      </Text>
-                      <Text style={styles.timelineTime}>
-                        {trackingOrder.estimatedDelivery || 'Estimated Tomorrow by 7:00 PM'}
-                      </Text>
-                    </View>
-                  </View>
-                </View>
-              </View>
-            )}
-
-            <TouchableOpacity
-              style={styles.closeTrackingBtn}
-              onPress={() => setTrackingOrder(null)}
-            >
-              <Text style={styles.closeTrackingBtnText}>Close</Text>
-            </TouchableOpacity>
           </View>
         </View>
       </Modal>
@@ -1143,122 +1028,199 @@ const styles = StyleSheet.create({
   },
 
   // -------------------------------------------------------------
-  // Guest / Unauthenticated Hero Styles
+  // Auth Form Styles
   // -------------------------------------------------------------
-  guestHeroCard: {
+  authContainer: {
+    paddingVertical: spacing.md,
+  },
+  authHeaderBox: {
+    alignItems: 'center',
+    marginBottom: spacing.xl,
+  },
+  authIconCircle: {
+    width: 68,
+    height: 68,
+    borderRadius: 34,
+    backgroundColor: colors.surface,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.borderLight,
+  },
+  authHeading: {
+    ...typography.h2,
+    color: colors.textPrimary,
+    marginBottom: spacing.xs,
+  },
+  authSubheading: {
+    ...typography.body,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    paddingHorizontal: spacing.lg,
+  },
+
+  authModeSwitcher: {
+    flexDirection: 'row',
+    backgroundColor: colors.surface,
+    borderRadius: radii.md,
+    padding: 4,
+    marginBottom: spacing.lg,
+  },
+  authModeBtn: {
+    flex: 1,
+    paddingVertical: spacing.sm,
+    alignItems: 'center',
+    borderRadius: radii.sm,
+  },
+  authModeBtnActive: {
+    backgroundColor: colors.card,
+    ...shadows.subtle,
+  },
+  authModeBtnText: {
+    ...typography.subtitle,
+    fontSize: 14,
+    color: colors.textMuted,
+  },
+  authModeBtnTextActive: {
+    color: colors.textPrimary,
+    fontWeight: '700',
+  },
+
+  formCard: {
     backgroundColor: colors.card,
     borderRadius: radii.lg,
-    padding: spacing.xl,
-    alignItems: 'center',
-    marginBottom: spacing.lg,
+    padding: spacing.lg,
     ...shadows.card,
     borderWidth: 1,
     borderColor: colors.borderLight,
   },
-  guestIconCircle: {
-    width: 76,
-    height: 76,
-    borderRadius: 38,
-    backgroundColor: colors.surface,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: spacing.md,
-  },
-  guestTitle: {
-    ...typography.h2,
-    color: colors.textPrimary,
-    textAlign: 'center',
-    marginBottom: spacing.xs,
-  },
-  guestSubtitle: {
-    ...typography.body,
+  inputLabel: {
+    ...typography.caption,
+    fontWeight: '700',
     color: colors.textSecondary,
-    textAlign: 'center',
-    lineHeight: 22,
-    marginBottom: spacing.xl,
+    marginTop: spacing.sm,
+    marginBottom: 4,
   },
-  shopifyLoginButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.primary,
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.xl,
-    borderRadius: radii.md,
-    width: '100%',
-    marginBottom: spacing.md,
-    ...shadows.subtle,
-  },
-  shopifyLoginText: {
-    ...typography.button,
-    color: colors.textInverse,
-    marginLeft: spacing.sm,
-  },
-  demoLoginButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
+  inputField: {
     backgroundColor: colors.surface,
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.lg,
-    borderRadius: radii.md,
-    width: '100%',
     borderWidth: 1,
     borderColor: colors.border,
+    borderRadius: radii.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    fontSize: 14,
+    color: colors.textPrimary,
   },
-  demoLoginText: {
+  nameRow: {
+    flexDirection: 'row',
+  },
+  passwordInputWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radii.sm,
+  },
+  passwordField: {
+    flex: 1,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    fontSize: 14,
+    color: colors.textPrimary,
+  },
+  eyeBtn: {
+    paddingHorizontal: spacing.md,
+  },
+  forgotPassLink: {
+    alignSelf: 'flex-end',
+    marginTop: spacing.sm,
+    marginBottom: spacing.md,
+  },
+  forgotPassText: {
+    ...typography.caption,
+    color: colors.accentDark,
+    fontWeight: '600',
+  },
+  submitBtn: {
+    backgroundColor: colors.primary,
+    paddingVertical: spacing.md,
+    borderRadius: radii.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: spacing.sm,
+  },
+  submitBtnText: {
+    ...typography.button,
+    color: colors.textInverse,
+  },
+  backToLoginBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: spacing.lg,
+  },
+  backToLoginText: {
     ...typography.button,
     fontSize: 14,
     color: colors.primary,
-    marginLeft: spacing.xs,
+    marginLeft: 4,
   },
 
-  perksSectionTitle: {
-    ...typography.h3,
-    color: colors.textPrimary,
-    marginBottom: spacing.md,
-    marginLeft: spacing.xs,
-  },
-  perksGrid: {
+  errorBanner: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-    marginBottom: spacing.lg,
-  },
-  perkCard: {
-    width: '48%',
-    backgroundColor: colors.card,
-    borderRadius: radii.md,
-    padding: spacing.md,
-    marginBottom: spacing.md,
-    ...shadows.subtle,
-    borderWidth: 1,
-    borderColor: colors.borderLight,
-  },
-  perkIconWrapper: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: spacing.sm,
+    backgroundColor: colors.errorLight,
+    padding: spacing.md,
+    borderRadius: radii.md,
+    marginBottom: spacing.md,
+    borderWidth: 1,
+    borderColor: '#FECACA',
   },
-  perkCardTitle: {
-    ...typography.subtitle,
-    fontWeight: '700',
-    color: colors.textPrimary,
-    marginBottom: 4,
+  errorBannerText: {
+    ...typography.caption,
+    color: colors.error,
+    fontWeight: '600',
+    marginLeft: spacing.sm,
+    flex: 1,
   },
-  perkCardDesc: {
-    ...typography.bodySmall,
+  successBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.successLight,
+    padding: spacing.md,
+    borderRadius: radii.md,
+    marginBottom: spacing.md,
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+  },
+  successBannerText: {
+    ...typography.caption,
+    color: colors.success,
+    fontWeight: '600',
+    marginLeft: spacing.sm,
+    flex: 1,
+  },
+
+  supportLinkRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: spacing.xl,
+  },
+  supportLinkText: {
+    ...typography.caption,
     color: colors.textSecondary,
-    lineHeight: 18,
+    marginLeft: 4,
   },
 
   // -------------------------------------------------------------
-  // Authenticated Customer Header Styles
+  // Authenticated Profile Styles
   // -------------------------------------------------------------
-  profileHeaderCard: {
+  customerHeaderCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: colors.card,
     borderRadius: radii.lg,
     padding: spacing.lg,
@@ -1267,109 +1229,46 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.borderLight,
   },
-  profileTopRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: spacing.md,
-  },
-  avatarCircle: {
+  customerAvatar: {
     width: 60,
     height: 60,
     borderRadius: 30,
-    backgroundColor: colors.primaryLight,
+    backgroundColor: colors.primary,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  avatarInitials: {
+  customerAvatarText: {
     ...typography.h2,
     color: colors.textInverse,
     fontWeight: '800',
   },
-  profileTextCol: {
-    flex: 1,
+  customerInfoCol: {
     marginLeft: spacing.md,
+    flex: 1,
   },
-  nameRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flexWrap: 'wrap',
-  },
-  profileName: {
-    ...typography.h2,
-    fontSize: 20,
+  customerDisplayName: {
+    ...typography.h3,
     color: colors.textPrimary,
-    marginRight: spacing.sm,
   },
-  tierPill: {
-    backgroundColor: '#FEF3C7',
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#FDE68A',
-  },
-  tierPillText: {
-    ...typography.caption,
-    color: colors.accentDark,
-    fontWeight: '700',
-  },
-  profileEmail: {
+  customerEmailText: {
     ...typography.bodySmall,
     color: colors.textSecondary,
     marginTop: 2,
   },
-  profilePhone: {
+  customerPhoneText: {
     ...typography.caption,
     color: colors.textMuted,
-    marginTop: 1,
-  },
-  pointsBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: colors.surface,
-    borderRadius: radii.md,
-    padding: spacing.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  pointsLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-  pointsTitle: {
-    ...typography.subtitle,
-    fontWeight: '700',
-    color: colors.textPrimary,
-  },
-  pointsSubtitle: {
-    ...typography.caption,
-    color: colors.textSecondary,
-  },
-  redeemButton: {
-    backgroundColor: colors.primary,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
-    borderRadius: radii.sm,
-  },
-  redeemButtonText: {
-    ...typography.button,
-    fontSize: 12,
-    color: colors.textInverse,
+    marginTop: 2,
   },
 
-  // -------------------------------------------------------------
-  // Segmented Tabs
-  // -------------------------------------------------------------
-  segmentedTabBar: {
+  profileTabBar: {
     flexDirection: 'row',
     backgroundColor: colors.surface,
     borderRadius: radii.md,
     padding: 4,
     marginBottom: spacing.md,
   },
-  segmentTab: {
+  profileTabBtn: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
@@ -1377,28 +1276,26 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
     borderRadius: radii.sm,
   },
-  segmentTabActive: {
+  profileTabBtnActive: {
     backgroundColor: colors.card,
     ...shadows.subtle,
   },
-  segmentTabText: {
+  profileTabText: {
     ...typography.caption,
     fontSize: 12,
     color: colors.textMuted,
     marginLeft: 4,
     fontWeight: '600',
   },
-  segmentTabTextActive: {
+  profileTabTextActive: {
     color: colors.textPrimary,
     fontWeight: '700',
   },
-  tabContentContainer: {
+  tabContainer: {
     marginBottom: spacing.lg,
   },
 
-  // -------------------------------------------------------------
-  // Orders Tab Styles
-  // -------------------------------------------------------------
+  // Orders Tab
   orderCard: {
     backgroundColor: colors.card,
     borderRadius: radii.md,
@@ -1408,7 +1305,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.borderLight,
   },
-  orderCardHeader: {
+  orderCardTop: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
@@ -1417,7 +1314,7 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.sm,
     marginBottom: spacing.sm,
   },
-  orderNumberText: {
+  orderNameText: {
     ...typography.subtitle,
     fontWeight: '800',
     color: colors.textPrimary,
@@ -1426,61 +1323,59 @@ const styles = StyleSheet.create({
     ...typography.caption,
     color: colors.textMuted,
   },
-  orderRightHeader: {
-    alignItems: 'flex-end',
-  },
   orderTotalText: {
     ...typography.subtitle,
     fontWeight: '700',
     color: colors.primary,
   },
-  statusPill: {
+  statusPillsRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 8,
+    marginTop: 4,
+  },
+  statusPill: {
+    paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: radii.xs,
-    marginTop: 4,
   },
   statusPillSuccess: {
     backgroundColor: colors.successLight,
   },
-  statusPillTransit: {
-    backgroundColor: '#DBEAFE',
-  },
-  statusPillPending: {
+  statusPillWarning: {
     backgroundColor: '#FEF3C7',
+  },
+  statusPillInfo: {
+    backgroundColor: '#DBEAFE',
   },
   statusPillText: {
     ...typography.caption,
-    fontWeight: '700',
-    marginLeft: 4,
-    fontSize: 10,
+    fontSize: 9,
+    fontWeight: '800',
   },
   statusTextSuccess: {
     color: colors.success,
   },
-  statusTextTransit: {
-    color: '#1E40AF',
-  },
-  statusTextPending: {
+  statusTextWarning: {
     color: colors.accentDark,
   },
-  orderLineItemsWrapper: {
-    marginBottom: spacing.sm,
+  statusTextInfo: {
+    color: '#1E40AF',
+  },
+
+  orderLineItemsList: {
+    marginVertical: spacing.xs,
   },
   orderLineItem: {
     flexDirection: 'row',
     alignItems: 'center',
     marginVertical: 4,
   },
-  orderBookThumb: {
+  orderItemImage: {
     width: 36,
     height: 50,
     borderRadius: radii.xs,
     backgroundColor: colors.surface,
   },
-  orderBookPlaceholder: {
+  orderItemImagePlaceholder: {
     width: 36,
     height: 50,
     borderRadius: radii.xs,
@@ -1488,68 +1383,51 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  orderLineItemInfo: {
-    flex: 1,
+  orderItemInfoCol: {
     marginLeft: spacing.sm,
+    flex: 1,
   },
-  orderLineItemTitle: {
+  orderItemTitle: {
     ...typography.subtitle,
     fontSize: 13,
     color: colors.textPrimary,
   },
-  orderLineItemSub: {
+  orderItemSub: {
     ...typography.caption,
     color: colors.textMuted,
   },
-  orderActionRow: {
+
+  orderCardFooter: {
     flexDirection: 'row',
     justifyContent: 'flex-end',
     borderTopWidth: 1,
     borderTopColor: colors.borderLight,
     paddingTop: spacing.sm,
-    gap: spacing.sm,
+    marginTop: spacing.xs,
   },
-  trackButton: {
+  reorderBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 6,
-    paddingHorizontal: spacing.md,
-    borderRadius: radii.sm,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  trackButtonText: {
-    ...typography.caption,
-    fontWeight: '600',
-    color: colors.primary,
-    marginLeft: 4,
-  },
-  reorderButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 6,
-    paddingHorizontal: spacing.md,
-    borderRadius: radii.sm,
     backgroundColor: colors.primary,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 6,
+    borderRadius: radii.sm,
   },
-  reorderButtonText: {
+  reorderBtnText: {
     ...typography.caption,
-    fontWeight: '600',
+    fontWeight: '700',
     color: colors.textInverse,
     marginLeft: 4,
   },
 
-  // -------------------------------------------------------------
-  // Addresses Tab Styles
-  // -------------------------------------------------------------
-  tabSectionHeaderRow: {
+  // Addresses Tab
+  addressSectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: spacing.md,
   },
-  tabSectionTitle: {
+  addressSectionTitle: {
     ...typography.h3,
     color: colors.textPrimary,
   },
@@ -1576,59 +1454,46 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.borderLight,
   },
-  addressTopRow: {
+  addressCardTop: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 4,
   },
-  addressTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-  addressRecipientName: {
+  addressStreet: {
     ...typography.subtitle,
     fontWeight: '700',
     color: colors.textPrimary,
     marginRight: spacing.sm,
   },
-  defaultAddressBadge: {
+  defaultBadge: {
     backgroundColor: colors.primaryLight,
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: radii.xs,
   },
-  defaultAddressBadgeText: {
+  defaultBadgeText: {
     ...typography.caption,
     fontSize: 9,
     fontWeight: '800',
     color: colors.textInverse,
   },
-  editAddressIconBtn: {
-    padding: 4,
-  },
-  addressStreetText: {
+  addressLine: {
     ...typography.body,
     color: colors.textSecondary,
   },
-  addressCityZipText: {
-    ...typography.body,
-    color: colors.textSecondary,
-  },
-  addressCountryText: {
+  addressCountry: {
     ...typography.caption,
     color: colors.textMuted,
     marginTop: 2,
   },
-  addressPhoneText: {
+  addressPhone: {
     ...typography.caption,
     color: colors.textMuted,
     marginTop: 2,
   },
   addressCardFooter: {
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'flex-end',
     borderTopWidth: 1,
     borderTopColor: colors.borderLight,
@@ -1636,31 +1501,29 @@ const styles = StyleSheet.create({
     marginTop: spacing.sm,
     gap: spacing.md,
   },
-  setDefaultBtn: {
+  setDefaultLink: {
     paddingVertical: 4,
-    paddingHorizontal: 8,
+    paddingHorizontal: 6,
   },
-  setDefaultBtnText: {
+  setDefaultLinkText: {
     ...typography.caption,
     color: colors.primary,
     fontWeight: '600',
   },
-  deleteAddressBtn: {
+  deleteAddressLink: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 4,
-    paddingHorizontal: 8,
+    paddingHorizontal: 6,
   },
-  deleteAddressBtnText: {
+  deleteAddressLinkText: {
     ...typography.caption,
     color: colors.error,
     fontWeight: '600',
     marginLeft: 4,
   },
 
-  // -------------------------------------------------------------
-  // Wishlist Tab Styles
-  // -------------------------------------------------------------
+  // Wishlist Tab
   wishlistCard: {
     flexDirection: 'row',
     backgroundColor: colors.card,
@@ -1671,7 +1534,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.borderLight,
   },
-  wishlistCoverImage: {
+  wishlistCover: {
     width: 70,
     height: 105,
     borderRadius: radii.sm,
@@ -1690,7 +1553,7 @@ const styles = StyleSheet.create({
     marginLeft: spacing.md,
     justifyContent: 'space-between',
   },
-  wishlistVendor: {
+  wishlistAuthor: {
     ...typography.caption,
     color: colors.textMuted,
   },
@@ -1728,125 +1591,7 @@ const styles = StyleSheet.create({
     padding: 6,
   },
 
-  // -------------------------------------------------------------
-  // Settings Tab & Section Styles
-  // -------------------------------------------------------------
-  sectionCard: {
-    backgroundColor: colors.card,
-    borderRadius: radii.md,
-    padding: spacing.md,
-    marginBottom: spacing.md,
-    ...shadows.subtle,
-    borderWidth: 1,
-    borderColor: colors.borderLight,
-  },
-  sectionHeaderTitle: {
-    ...typography.subtitle,
-    fontWeight: '700',
-    color: colors.textPrimary,
-    marginBottom: spacing.sm,
-  },
-  toggleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: spacing.sm,
-  },
-  toggleTitle: {
-    ...typography.subtitle,
-    color: colors.textPrimary,
-  },
-  toggleSubtitle: {
-    ...typography.caption,
-    color: colors.textMuted,
-    marginTop: 2,
-  },
-  divider: {
-    height: 1,
-    backgroundColor: colors.borderLight,
-    marginVertical: spacing.xs,
-  },
-  menuGroup: {
-    backgroundColor: colors.card,
-    borderRadius: radii.md,
-    overflow: 'hidden',
-    marginBottom: spacing.md,
-    ...shadows.subtle,
-    borderWidth: 1,
-    borderColor: colors.borderLight,
-  },
-  menuItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: spacing.md,
-  },
-  menuLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  menuText: {
-    ...typography.subtitle,
-    color: colors.textPrimary,
-    marginLeft: spacing.md,
-  },
-  menuDivider: {
-    height: 1,
-    backgroundColor: colors.borderLight,
-  },
-  devToggleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  devToggleTitle: {
-    ...typography.caption,
-    fontWeight: '700',
-    color: colors.textSecondary,
-    marginLeft: 6,
-  },
-  metaRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 6,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.borderLight,
-  },
-  metaLabel: {
-    ...typography.caption,
-    color: colors.textMuted,
-  },
-  metaValue: {
-    ...typography.caption,
-    fontWeight: '600',
-    color: colors.textSecondary,
-  },
-  metaValueMono: {
-    ...typography.caption,
-    fontFamily: 'monospace',
-    color: colors.primary,
-  },
-  logoutButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.errorLight,
-    paddingVertical: spacing.md,
-    borderRadius: radii.md,
-    borderWidth: 1,
-    borderColor: '#FECACA',
-    marginTop: spacing.xs,
-  },
-  logoutButtonText: {
-    ...typography.button,
-    color: colors.error,
-    marginLeft: spacing.xs,
-  },
-
-  // -------------------------------------------------------------
-  // Empty State Styles
-  // -------------------------------------------------------------
+  // Empty States
   emptyCard: {
     backgroundColor: colors.card,
     borderRadius: radii.md,
@@ -1880,16 +1625,31 @@ const styles = StyleSheet.create({
     color: colors.textInverse,
   },
 
-  // -------------------------------------------------------------
-  // Modals Styles
-  // -------------------------------------------------------------
-  modalBackdrop: {
+  logoutBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.errorLight,
+    paddingVertical: spacing.md,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    marginTop: spacing.md,
+  },
+  logoutBtnText: {
+    ...typography.button,
+    color: colors.error,
+    marginLeft: spacing.xs,
+  },
+
+  // Modal Styles
+  modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(15, 23, 42, 0.6)',
     justifyContent: 'center',
     padding: spacing.lg,
   },
-  modalCard: {
+  modalContent: {
     backgroundColor: colors.card,
     borderRadius: radii.lg,
     padding: spacing.xl,
@@ -1898,38 +1658,14 @@ const styles = StyleSheet.create({
   modalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     marginBottom: spacing.md,
   },
   modalTitle: {
     ...typography.h3,
     color: colors.textPrimary,
   },
-  modalSubtitle: {
-    ...typography.caption,
-    color: colors.textMuted,
-  },
-  inputLabel: {
-    ...typography.caption,
-    fontWeight: '700',
-    color: colors.textSecondary,
-    marginTop: spacing.sm,
-    marginBottom: 4,
-  },
-  inputField: {
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radii.sm,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    fontSize: 14,
-    color: colors.textPrimary,
-  },
-  inputRow: {
-    flexDirection: 'row',
-  },
-  modalFooterRow: {
+  modalBtnRow: {
     flexDirection: 'row',
     justifyContent: 'flex-end',
     marginTop: spacing.lg,
@@ -1948,100 +1684,11 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
     paddingHorizontal: spacing.lg,
     borderRadius: radii.sm,
+    minWidth: 100,
+    alignItems: 'center',
   },
   modalSaveBtnText: {
     ...typography.button,
     color: colors.textInverse,
-  },
-
-  // Tracking Timeline Styles
-  trackingCarrierBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.surface,
-    padding: spacing.md,
-    borderRadius: radii.md,
-    marginBottom: spacing.lg,
-  },
-  carrierTitle: {
-    ...typography.subtitle,
-    fontWeight: '700',
-    color: colors.textPrimary,
-  },
-  carrierNumber: {
-    ...typography.caption,
-    color: colors.textMuted,
-  },
-  timelineContainer: {
-    paddingLeft: spacing.xs,
-  },
-  timelineStep: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-  },
-  timelineIconActive: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    backgroundColor: colors.primary,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  timelineIconTransit: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    backgroundColor: '#2563EB',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  timelineIconPending: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    backgroundColor: colors.surface,
-    borderWidth: 2,
-    borderColor: colors.border,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  timelineConnectorActive: {
-    width: 2,
-    height: 24,
-    backgroundColor: colors.primary,
-    marginLeft: 12,
-  },
-  timelineConnectorPending: {
-    width: 2,
-    height: 24,
-    backgroundColor: colors.border,
-    marginLeft: 12,
-  },
-  timelineTextCol: {
-    marginLeft: spacing.md,
-    flex: 1,
-  },
-  timelineTitle: {
-    ...typography.subtitle,
-    fontWeight: '700',
-    fontSize: 14,
-    color: colors.textPrimary,
-  },
-  timelineTime: {
-    ...typography.caption,
-    color: colors.textMuted,
-  },
-  closeTrackingBtn: {
-    backgroundColor: colors.surface,
-    borderRadius: radii.md,
-    paddingVertical: spacing.md,
-    alignItems: 'center',
-    marginTop: spacing.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  closeTrackingBtnText: {
-    ...typography.button,
-    color: colors.textPrimary,
   },
 });

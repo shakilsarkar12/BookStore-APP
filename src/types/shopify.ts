@@ -211,12 +211,10 @@ export interface CustomerOrder {
 export interface CustomerProfile {
   id: string;
   displayName: string;
-  firstName: string;
-  lastName: string;
+  firstName?: string;
+  lastName?: string;
   email: string;
   phone?: string;
-  memberTier: 'Bronze Reader' | 'Silver Collector' | 'Gold VIP Bookworm';
-  points: number;
   defaultAddress?: CustomerAddress;
   addresses: CustomerAddress[];
   orders: CustomerOrder[];
@@ -224,16 +222,34 @@ export interface CustomerProfile {
 
 export interface CustomerStoreState {
   isAuthenticated: boolean;
+  accessToken: string | null;
   customer: CustomerProfile | null;
   wishlistProductIds: string[];
   isLoading: boolean;
-  loginWithShopify: () => Promise<boolean>;
-  loginAsGuestOrDemo: () => void;
-  logout: () => void;
+  error: string | null;
+  login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
+  register: (data: {
+    email: string;
+    password: string;
+    firstName?: string;
+    lastName?: string;
+    phone?: string;
+  }) => Promise<{ success: boolean; error?: string }>;
+  forgotPassword: (email: string) => Promise<{ success: boolean; error?: string }>;
+  fetchCustomer: () => Promise<void>;
+  logout: () => Promise<void>;
   toggleWishlist: (productId: string) => void;
   isWishlisted: (productId: string) => boolean;
-  addAddress: (address: Omit<CustomerAddress, 'id'>) => void;
-  updateAddress: (id: string, address: Partial<CustomerAddress>) => void;
-  deleteAddress: (id: string) => void;
-  setDefaultAddress: (id: string) => void;
+  addAddress: (address: {
+    address1: string;
+    address2?: string;
+    city: string;
+    province?: string;
+    zip: string;
+    country: string;
+    phone?: string;
+    isDefault?: boolean;
+  }) => Promise<{ success: boolean; error?: string }>;
+  deleteAddress: (id: string) => Promise<{ success: boolean; error?: string }>;
+  setDefaultAddress: (id: string) => Promise<{ success: boolean; error?: string }>;
 }

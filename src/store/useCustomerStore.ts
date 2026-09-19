@@ -1,62 +1,128 @@
 /**
  * Customer Account State Management using Zustand + AsyncStorage persistence.
- * Powered by Shopify Customer Account API integration.
+ * Connects to live Shopify Storefront API for authentic, native customer accounts.
  */
 
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { CustomerStoreState, CustomerAddress } from '../types/shopify';
+import { CustomerStoreState } from '../types/shopify';
 import {
-  SAMPLE_CUSTOMER_PROFILE,
-  launchShopifyCustomerAuth,
+  loginCustomer,
+  registerCustomer,
+  recoverCustomerPassword,
+  logoutCustomer,
+  fetchCustomerProfile,
+  createCustomerAddress,
+  deleteCustomerAddress,
+  setDefaultCustomerAddress,
 } from '../api/customerClient';
-import { MOCK_BOOKS } from '../data/mockBooks';
 
 export const useCustomerStore = create<CustomerStoreState>()(
   persist(
     (set, get) => ({
-      isAuthenticated: true, // Default to true so the user immediately experiences the rich customer UI
-      customer: SAMPLE_CUSTOMER_PROFILE,
-      wishlistProductIds: [
-        MOCK_BOOKS[0]?.id || 'gid://shopify/Product/1',
-        MOCK_BOOKS[2]?.id || 'gid://shopify/Product/3',
-      ],
+      isAuthenticated: false,
+      accessToken: null,
+      customer: null,
+      wishlistProductIds: [],
       isLoading: false,
+      error: null,
 
-      loginWithShopify: async () => {
-        set({ isLoading: true });
+      login: async (email, password) => {
+        set({ isLoading: true, error: null });
         try {
-          const success = await launchShopifyCustomerAuth();
-          if (success) {
-            set({
-              isAuthenticated: true,
-              customer: get().customer || SAMPLE_CUSTOMER_PROFILE,
-              isLoading: false,
-            });
-            return true;
-          }
-        } catch (error) {
-          console.error('[CustomerStore] Shopify login failed:', error);
-        } finally {
-          set({ isLoading: false });
+          const auth = await loginCustomer(email.trim(), password);
+          const customer = await fetchCustomerProfile(auth.accessToken);
+
+          set({
+            isAuthenticated: true,
+            accessToken: auth.accessToken,
+            customer,
+            isLoading: false,
+            error: null,
+          });
+
+          return { success: true };
+        } catch (err: unknown) {
+          const message = err instanceof Error ? err.message : 'Login failed';
+          set({ isLoading: false, error: message });
+          return { success: false, error: message };
         }
-        return false;
       },
 
-      loginAsGuestOrDemo: () => {
-        set({
-          isAuthenticated: true,
-          customer: SAMPLE_CUSTOMER_PROFILE,
-          isLoading: false,
-        });
+      register: async (input) => {
+        set({ isLoading: true, error: null });
+        try {
+          await registerCustomer({
+            email: input.email.trim(),
+            password: input.password,
+            firstName: input.firstName?.trim(),
+            lastName: input.lastName?.trim(),
+            phone: input.phone?.trim(),
+          });
+
+          // Automatically authenticate user after successful creation
+          const auth = await loginCustomer(input.email.trim(), input.password);
+          const customer = await fetchCustomerProfile(auth.accessToken);
+
+          set({
+            isAuthenticated: true,
+            accessToken: auth.accessToken,
+            customer,
+            isLoading: false,
+            error: null,
+          });
+
+          return { success: true };
+        } catch (err: unknown) {
+          const message = err instanceof Error ? err.message : 'Registration failed';
+          set({ isLoading: false, error: message });
+          return { success: false, error: message };
+        }
       },
 
-      logout: () => {
+      forgotPassword: async (email) => {
+        set({ isLoading: true, error: null });
+        try {
+          await recoverCustomerPassword(email.trim());
+          set({ isLoading: false, error: null });
+          return { success: true };
+        } catch (err: unknown) {
+          const message = err instanceof Error ? err.message : 'Could not recover password';
+          set({ isLoading: false, error: message });
+          return { success: false, error: message };
+        }
+      },
+
+      fetchCustomer: async () => {
+        const { accessToken } = get();
+        if (!accessToken) return;
+
+        try {
+          const customer = await fetchCustomerProfile(accessToken);
+          if (customer) {
+            set({ customer, isAuthenticated: true });
+          } else {
+            // Token expired or invalid
+            set({ customer: null, isAuthenticated: false, accessToken: null });
+          }
+        } catch (err) {
+          console.warn('[CustomerStore] fetchCustomer failed:', err);
+        }
+      },
+
+      logout: async () => {
+        const { accessToken } = get();
+        if (accessToken) {
+          await logoutCustomer(accessToken);
+        }
+
         set({
           isAuthenticated: false,
+          accessToken: null,
           customer: null,
           isLoading: false,
+          error: null,
         });
       },
 
@@ -75,107 +141,73 @@ export const useCustomerStore = create<CustomerStoreState>()(
         return get().wishlistProductIds.includes(productId);
       },
 
-      addAddress: (addressData: Omit<CustomerAddress, 'id'>) => {
-        set((state) => {
-          if (!state.customer) return state;
+      addAddress: async (addressData) => {
+        const { accessToken, fetchCustomer } = get();
+        if (!accessToken) {
+          return { success: false, error: 'Not authenticated' };
+        }
 
-          const newId = `addr_${Date.now()}`;
-          const newAddress: CustomerAddress = {
-            ...addressData,
-            id: newId,
-          };
-
-          const updatedAddresses = addressData.isDefault
-            ? state.customer.addresses.map((a) => ({ ...a, isDefault: false }))
-            : [...state.customer.addresses];
-
-          updatedAddresses.push(newAddress);
-
-          return {
-            customer: {
-              ...state.customer,
-              addresses: updatedAddresses,
-              defaultAddress: addressData.isDefault
-                ? newAddress
-                : state.customer.defaultAddress,
-            },
-          };
-        });
-      },
-
-      updateAddress: (id: string, partial: Partial<CustomerAddress>) => {
-        set((state) => {
-          if (!state.customer) return state;
-
-          const updatedAddresses = state.customer.addresses.map((addr) => {
-            if (addr.id === id) {
-              return { ...addr, ...partial };
-            }
-            if (partial.isDefault) {
-              return { ...addr, isDefault: false };
-            }
-            return addr;
+        try {
+          const addressId = await createCustomerAddress(accessToken, {
+            address1: addressData.address1,
+            address2: addressData.address2,
+            city: addressData.city,
+            province: addressData.province,
+            zip: addressData.zip,
+            country: addressData.country,
+            phone: addressData.phone,
           });
 
-          const currentDefault = updatedAddresses.find((a) => a.isDefault) || state.customer.defaultAddress;
+          if (addressData.isDefault && addressId) {
+            await setDefaultCustomerAddress(accessToken, addressId);
+          }
 
-          return {
-            customer: {
-              ...state.customer,
-              addresses: updatedAddresses,
-              defaultAddress: currentDefault,
-            },
-          };
-        });
+          await fetchCustomer();
+          return { success: true };
+        } catch (err: unknown) {
+          const message = err instanceof Error ? err.message : 'Failed to add address';
+          return { success: false, error: message };
+        }
       },
 
-      deleteAddress: (id: string) => {
-        set((state) => {
-          if (!state.customer) return state;
+      deleteAddress: async (addressId) => {
+        const { accessToken, fetchCustomer } = get();
+        if (!accessToken) {
+          return { success: false, error: 'Not authenticated' };
+        }
 
-          const filtered = state.customer.addresses.filter((a) => a.id !== id);
-          return {
-            customer: {
-              ...state.customer,
-              addresses: filtered,
-              defaultAddress:
-                state.customer.defaultAddress?.id === id
-                  ? filtered[0] || undefined
-                  : state.customer.defaultAddress,
-            },
-          };
-        });
+        try {
+          await deleteCustomerAddress(accessToken, addressId);
+          await fetchCustomer();
+          return { success: true };
+        } catch (err: unknown) {
+          const message = err instanceof Error ? err.message : 'Failed to delete address';
+          return { success: false, error: message };
+        }
       },
 
-      setDefaultAddress: (id: string) => {
-        set((state) => {
-          if (!state.customer) return state;
+      setDefaultAddress: async (addressId) => {
+        const { accessToken, fetchCustomer } = get();
+        if (!accessToken) {
+          return { success: false, error: 'Not authenticated' };
+        }
 
-          let newDefault: CustomerAddress | undefined;
-          const updated = state.customer.addresses.map((a) => {
-            if (a.id === id) {
-              newDefault = { ...a, isDefault: true };
-              return newDefault;
-            }
-            return { ...a, isDefault: false };
-          });
-
-          return {
-            customer: {
-              ...state.customer,
-              addresses: updated,
-              defaultAddress: newDefault || state.customer.defaultAddress,
-            },
-          };
-        });
+        try {
+          await setDefaultCustomerAddress(accessToken, addressId);
+          await fetchCustomer();
+          return { success: true };
+        } catch (err: unknown) {
+          const message = err instanceof Error ? err.message : 'Failed to update default address';
+          return { success: false, error: message };
+        }
       },
     }),
     {
-      name: 'bookstore-customer-storage',
+      name: 'bookstore-customer-auth',
       storage: createJSONStorage(() => AsyncStorage),
       partialize: (state) => ({
         isAuthenticated: state.isAuthenticated,
-        customer: state.customer,
+        accessToken: state.accessToken,
         wishlistProductIds: state.wishlistProductIds,
       }),
     }

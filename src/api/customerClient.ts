@@ -1,156 +1,531 @@
 /**
- * Shopify Customer Account API Client & OAuth Authentication Service
- * Implements modern headless Shopify Customer Account integration.
+ * Shopify Native Customer Authentication & Account API Client
+ * Connects directly to Shopify Storefront API GraphQL for native customer accounts.
  */
 
-import * as WebBrowser from 'expo-web-browser';
 import { CustomerProfile, CustomerOrder, CustomerAddress } from '../types/shopify';
-import { MOCK_BOOKS } from '../data/mockBooks';
 
 const SHOPIFY_DOMAIN =
   process.env.EXPO_PUBLIC_SHOPIFY_DOMAIN || 'book-store-cpepvunk.myshopify.com';
-const CUSTOMER_ACCOUNT_CLIENT_ID =
-  process.env.EXPO_PUBLIC_CUSTOMER_ACCOUNT_CLIENT_ID || '6d60f305-08b3-4b38-a6e4-74700703d114';
+const STOREFRONT_TOKEN =
+  process.env.EXPO_PUBLIC_STOREFRONT_TOKEN || 'abe2619e95b8b403f9cacdbc9f98d062';
+const API_VERSION =
+  process.env.EXPO_PUBLIC_SHOPIFY_API_VERSION || '2024-10';
 
-/**
- * Returns the Shopify Customer Account login URL
- */
-export function getShopifyCustomerLoginUrl(): string {
-  // Direct storefront customer portal login or OAuth authorize URL
-  return `https://${SHOPIFY_DOMAIN}/account/login?client_id=${CUSTOMER_ACCOUNT_CLIENT_ID}`;
+const GRAPHQL_ENDPOINT = `https://${SHOPIFY_DOMAIN}/api/${API_VERSION}/graphql.json`;
+
+async function executeShopifyGraphQL<T>(query: string, variables: Record<string, unknown> = {}): Promise<T> {
+  const response = await fetch(GRAPHQL_ENDPOINT, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Shopify-Storefront-Access-Token': STOREFRONT_TOKEN,
+    },
+    body: JSON.stringify({ query, variables }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Shopify Network Error: ${response.status} ${response.statusText}`);
+  }
+
+  const json = await response.json();
+
+  if (json.errors && json.errors.length > 0) {
+    throw new Error(json.errors[0].message || 'Shopify GraphQL Error');
+  }
+
+  return json.data as T;
 }
 
 /**
- * Launches the Shopify Customer Account OAuth / Web Login Flow
+ * 1. Native Customer Login via Storefront API
  */
-export async function launchShopifyCustomerAuth(): Promise<boolean> {
-  try {
-    const loginUrl = getShopifyCustomerLoginUrl();
-    const result = await WebBrowser.openAuthSessionAsync(
-      loginUrl,
-      'bookstore://auth'
-    );
+export async function loginCustomer(
+  email: string,
+  password: string
+): Promise<{ accessToken: string; expiresAt: string }> {
+  const query = `
+    mutation customerAccessTokenCreate($input: CustomerAccessTokenCreateInput!) {
+      customerAccessTokenCreate(input: $input) {
+        customerAccessToken {
+          accessToken
+          expiresAt
+        }
+        customerUserErrors {
+          code
+          field
+          message
+        }
+      }
+    }
+  `;
 
-    if (result.type === 'success' || result.type === 'dismiss') {
-      return true;
+  interface ResponseData {
+    customerAccessTokenCreate: {
+      customerAccessToken: { accessToken: string; expiresAt: string } | null;
+      customerUserErrors: Array<{ code: string; field: string[]; message: string }>;
+    };
+  }
+
+  const data = await executeShopifyGraphQL<ResponseData>(query, {
+    input: { email, password },
+  });
+
+  const { customerAccessToken, customerUserErrors } = data.customerAccessTokenCreate;
+
+  if (customerUserErrors && customerUserErrors.length > 0) {
+    throw new Error(customerUserErrors[0].message || 'Invalid email or password');
+  }
+
+  if (!customerAccessToken) {
+    throw new Error('Could not authenticate customer with provided credentials.');
+  }
+
+  return customerAccessToken;
+}
+
+/**
+ * 2. Native Customer Registration via Storefront API
+ */
+export async function registerCustomer(input: {
+  email: string;
+  password: string;
+  firstName?: string;
+  lastName?: string;
+  phone?: string;
+}): Promise<{ id: string; email: string }> {
+  const query = `
+    mutation customerCreate($input: CustomerCreateInput!) {
+      customerCreate(input: $input) {
+        customer {
+          id
+          email
+          firstName
+          lastName
+        }
+        customerUserErrors {
+          code
+          field
+          message
+        }
+      }
     }
+  `;
+
+  interface ResponseData {
+    customerCreate: {
+      customer: { id: string; email: string } | null;
+      customerUserErrors: Array<{ code: string; field: string[]; message: string }>;
+    };
+  }
+
+  const data = await executeShopifyGraphQL<ResponseData>(query, { input });
+
+  const { customer, customerUserErrors } = data.customerCreate;
+
+  if (customerUserErrors && customerUserErrors.length > 0) {
+    throw new Error(customerUserErrors[0].message || 'Registration failed');
+  }
+
+  if (!customer) {
+    throw new Error('Could not create account. Please try again.');
+  }
+
+  return customer;
+}
+
+/**
+ * 3. Native Password Recovery
+ */
+export async function recoverCustomerPassword(email: string): Promise<boolean> {
+  const query = `
+    mutation customerRecover($email: String!) {
+      customerRecover(email: $email) {
+        customerUserErrors {
+          code
+          field
+          message
+        }
+      }
+    }
+  `;
+
+  interface ResponseData {
+    customerRecover: {
+      customerUserErrors: Array<{ code: string; field: string[]; message: string }>;
+    };
+  }
+
+  const data = await executeShopifyGraphQL<ResponseData>(query, { email });
+
+  const { customerUserErrors } = data.customerRecover;
+
+  if (customerUserErrors && customerUserErrors.length > 0) {
+    throw new Error(customerUserErrors[0].message || 'Could not send reset password email');
+  }
+
+  return true;
+}
+
+/**
+ * 4. Native Logout / Invalidate Token
+ */
+export async function logoutCustomer(accessToken: string): Promise<boolean> {
+  const query = `
+    mutation customerAccessTokenDelete($customerAccessToken: String!) {
+      customerAccessTokenDelete(customerAccessToken: $customerAccessToken) {
+        deletedAccessToken
+        userErrors {
+          field
+          message
+        }
+      }
+    }
+  `;
+
+  try {
+    await executeShopifyGraphQL(query, { customerAccessToken: accessToken });
+    return true;
+  } catch {
     return false;
-  } catch (error) {
-    console.warn('[CustomerClient] WebBrowser auth session failed, opening standard browser:', error);
-    try {
-      await WebBrowser.openBrowserAsync(getShopifyCustomerLoginUrl());
-      return true;
-    } catch {
-      return false;
-    }
   }
 }
 
 /**
- * Seed data for rich initial customer experience
+ * 5. Fetch Real Customer Profile, Addresses, and Orders from Shopify
  */
-export const SAMPLE_CUSTOMER_PROFILE: CustomerProfile = {
-  id: 'gid://shopify/Customer/82947192019',
-  displayName: 'Sarah Jenkins',
-  firstName: 'Sarah',
-  lastName: 'Jenkins',
-  email: 'sarah.jenkins@booklovers.org',
-  phone: '+1 (206) 555-0198',
-  memberTier: 'Gold VIP Bookworm',
-  points: 380,
-  defaultAddress: {
-    id: 'addr_default_1',
-    name: 'Sarah Jenkins',
-    address1: '742 Evergreen Terrace, Apt 4B',
-    city: 'Seattle',
-    province: 'Washington',
-    zip: '98101',
-    country: 'United States',
-    phone: '+1 (206) 555-0198',
-    isDefault: true,
-  },
-  addresses: [
-    {
-      id: 'addr_default_1',
-      name: 'Sarah Jenkins',
-      address1: '742 Evergreen Terrace, Apt 4B',
-      city: 'Seattle',
-      province: 'Washington',
-      zip: '98101',
-      country: 'United States',
-      phone: '+1 (206) 555-0198',
-      isDefault: true,
-    },
-    {
-      id: 'addr_office_2',
-      name: 'Sarah Jenkins (Office)',
-      address1: '1200 4th Ave, Suite 1800',
-      city: 'Seattle',
-      province: 'Washington',
-      zip: '98104',
-      country: 'United States',
-      phone: '+1 (206) 555-0198',
-      isDefault: false,
-    },
-  ],
-  orders: [
-    {
-      id: 'gid://shopify/Order/918239102',
-      orderNumber: 'BK-8902',
-      name: '#BK-8902',
-      processedAt: new Date(Date.now() - 3 * 86400000).toISOString(),
-      financialStatus: 'PAID',
-      fulfillmentStatus: 'IN_TRANSIT',
-      totalPrice: 42.98,
-      currencyCode: 'USD',
-      trackingNumber: '1Z9999999999999999',
-      estimatedDelivery: 'Tomorrow by 7:00 PM',
-      lineItems: [
-        {
-          id: 'li_1',
-          title: MOCK_BOOKS[0]?.title || 'The Midnight Library',
-          quantity: 1,
-          price: 18.99,
-          imageUrl: MOCK_BOOKS[0]?.images.edges[0]?.node.url,
-        },
-        {
-          id: 'li_2',
-          title: MOCK_BOOKS[1]?.title || 'Atomic Habits',
-          quantity: 1,
-          price: 23.99,
-          imageUrl: MOCK_BOOKS[1]?.images.edges[0]?.node.url,
-        },
-      ],
-      shippingAddress: {
-        id: 'addr_default_1',
-        name: 'Sarah Jenkins',
-        address1: '742 Evergreen Terrace, Apt 4B',
-        city: 'Seattle',
-        province: 'Washington',
-        zip: '98101',
-        country: 'United States',
-      },
-    },
-    {
-      id: 'gid://shopify/Order/918239045',
-      orderNumber: 'BK-8419',
-      name: '#BK-8419',
-      processedAt: new Date(Date.now() - 14 * 86400000).toISOString(),
-      financialStatus: 'PAID',
-      fulfillmentStatus: 'FULFILLED',
-      totalPrice: 28.5,
-      currencyCode: 'USD',
-      trackingNumber: 'USPS-9400100000000000',
-      estimatedDelivery: 'Delivered on Sep 5',
-      lineItems: [
-        {
-          id: 'li_3',
-          title: MOCK_BOOKS[3]?.title || 'Clean Code: A Handbook of Agile Software',
-          quantity: 1,
-          price: 28.5,
-          imageUrl: MOCK_BOOKS[3]?.images.edges[0]?.node.url,
-        },
-      ],
-    },
-  ],
-};
+export async function fetchCustomerProfile(accessToken: string): Promise<CustomerProfile | null> {
+  const query = `
+    query getCustomerProfile($token: String!) {
+      customer(customerAccessToken: $token) {
+        id
+        displayName
+        firstName
+        lastName
+        email
+        phone
+        defaultAddress {
+          id
+          address1
+          address2
+          city
+          province
+          zip
+          country
+          phone
+        }
+        addresses(first: 20) {
+          edges {
+            node {
+              id
+              address1
+              address2
+              city
+              province
+              zip
+              country
+              phone
+            }
+          }
+        }
+        orders(first: 20, sortKey: PROCESSED_AT, reverse: true) {
+          edges {
+            node {
+              id
+              orderNumber
+              name
+              processedAt
+              financialStatus
+              fulfillmentStatus
+              totalPriceV2 {
+                amount
+                currencyCode
+              }
+              lineItems(first: 10) {
+                edges {
+                  node {
+                    title
+                    quantity
+                    variant {
+                      priceV2 {
+                        amount
+                        currencyCode
+                      }
+                      image {
+                        url
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  `;
+
+  interface GraphQLCustomerRaw {
+    customer: {
+      id: string;
+      displayName: string;
+      firstName?: string;
+      lastName?: string;
+      email: string;
+      phone?: string;
+      defaultAddress?: {
+        id: string;
+        address1: string;
+        address2?: string;
+        city: string;
+        province?: string;
+        zip: string;
+        country: string;
+        phone?: string;
+      };
+      addresses: {
+        edges: Array<{
+          node: {
+            id: string;
+            address1: string;
+            address2?: string;
+            city: string;
+            province?: string;
+            zip: string;
+            country: string;
+            phone?: string;
+          };
+        }>;
+      };
+      orders: {
+        edges: Array<{
+          node: {
+            id: string;
+            orderNumber: string;
+            name: string;
+            processedAt: string;
+            financialStatus: string;
+            fulfillmentStatus: string;
+            totalPriceV2: {
+              amount: string;
+              currencyCode: string;
+            };
+            lineItems: {
+              edges: Array<{
+                node: {
+                  title: string;
+                  quantity: number;
+                  variant?: {
+                    priceV2: {
+                      amount: string;
+                      currencyCode: string;
+                    };
+                    image?: {
+                      url: string;
+                    };
+                  };
+                };
+              }>;
+            };
+          };
+        }>;
+      };
+    } | null;
+  }
+
+  const data = await executeShopifyGraphQL<GraphQLCustomerRaw>(query, { token: accessToken });
+
+  if (!data.customer) {
+    return null;
+  }
+
+  const raw = data.customer;
+
+  const defaultAddrId = raw.defaultAddress?.id;
+
+  const addresses: CustomerAddress[] = raw.addresses.edges.map((e) => ({
+    id: e.node.id,
+    address1: e.node.address1,
+    address2: e.node.address2 || undefined,
+    city: e.node.city,
+    province: e.node.province || undefined,
+    zip: e.node.zip,
+    country: e.node.country,
+    phone: e.node.phone || undefined,
+    isDefault: e.node.id === defaultAddrId,
+  }));
+
+  const orders: CustomerOrder[] = raw.orders.edges.map((e) => {
+    const o = e.node;
+    return {
+      id: o.id,
+      orderNumber: o.orderNumber ? String(o.orderNumber) : o.name.replace('#', ''),
+      name: o.name,
+      processedAt: o.processedAt,
+      financialStatus: o.financialStatus,
+      fulfillmentStatus: o.fulfillmentStatus,
+      totalPrice: parseFloat(o.totalPriceV2.amount),
+      currencyCode: o.totalPriceV2.currencyCode,
+      lineItems: o.lineItems.edges.map((li, idx) => ({
+        id: `${o.id}_item_${idx}`,
+        title: li.node.title,
+        quantity: li.node.quantity,
+        price: li.node.variant ? parseFloat(li.node.variant.priceV2.amount) : 0,
+        imageUrl: li.node.variant?.image?.url,
+      })),
+    };
+  });
+
+  return {
+    id: raw.id,
+    displayName: raw.displayName || `${raw.firstName || ''} ${raw.lastName || ''}`.trim() || raw.email,
+    firstName: raw.firstName,
+    lastName: raw.lastName,
+    email: raw.email,
+    phone: raw.phone,
+    defaultAddress: raw.defaultAddress
+      ? {
+          id: raw.defaultAddress.id,
+          address1: raw.defaultAddress.address1,
+          address2: raw.defaultAddress.address2 || undefined,
+          city: raw.defaultAddress.city,
+          province: raw.defaultAddress.province || undefined,
+          zip: raw.defaultAddress.zip,
+          country: raw.defaultAddress.country,
+          phone: raw.defaultAddress.phone || undefined,
+          isDefault: true,
+        }
+      : undefined,
+    addresses,
+    orders,
+  };
+}
+
+/**
+ * 6. Add Address to Shopify Customer Account
+ */
+export async function createCustomerAddress(
+  accessToken: string,
+  address: {
+    address1: string;
+    address2?: string;
+    city: string;
+    province?: string;
+    zip: string;
+    country: string;
+    phone?: string;
+  }
+): Promise<string> {
+  const query = `
+    mutation customerAddressCreate($customerAccessToken: String!, $address: MailingAddressInput!) {
+      customerAddressCreate(customerAccessToken: $customerAccessToken, address: $address) {
+        customerAddress {
+          id
+        }
+        customerUserErrors {
+          code
+          field
+          message
+        }
+      }
+    }
+  `;
+
+  interface ResponseData {
+    customerAddressCreate: {
+      customerAddress: { id: string } | null;
+      customerUserErrors: Array<{ code: string; field: string[]; message: string }>;
+    };
+  }
+
+  const data = await executeShopifyGraphQL<ResponseData>(query, {
+    customerAccessToken: accessToken,
+    address,
+  });
+
+  const { customerAddress, customerUserErrors } = data.customerAddressCreate;
+
+  if (customerUserErrors && customerUserErrors.length > 0) {
+    throw new Error(customerUserErrors[0].message || 'Could not save address');
+  }
+
+  return customerAddress?.id || '';
+}
+
+/**
+ * 7. Delete Customer Address from Shopify
+ */
+export async function deleteCustomerAddress(accessToken: string, addressId: string): Promise<boolean> {
+  const query = `
+    mutation customerAddressDelete($customerAccessToken: String!, $id: ID!) {
+      customerAddressDelete(customerAccessToken: $customerAccessToken, id: $id) {
+        deletedCustomerAddressId
+        customerUserErrors {
+          code
+          field
+          message
+        }
+      }
+    }
+  `;
+
+  interface ResponseData {
+    customerAddressDelete: {
+      deletedCustomerAddressId: string | null;
+      customerUserErrors: Array<{ code: string; field: string[]; message: string }>;
+    };
+  }
+
+  const data = await executeShopifyGraphQL<ResponseData>(query, {
+    customerAccessToken: accessToken,
+    id: addressId,
+  });
+
+  const { customerUserErrors } = data.customerAddressDelete;
+
+  if (customerUserErrors && customerUserErrors.length > 0) {
+    throw new Error(customerUserErrors[0].message || 'Could not delete address');
+  }
+
+  return true;
+}
+
+/**
+ * 8. Set Default Address on Shopify
+ */
+export async function setDefaultCustomerAddress(accessToken: string, addressId: string): Promise<boolean> {
+  const query = `
+    mutation customerDefaultAddressUpdate($customerAccessToken: String!, $addressId: ID!) {
+      customerDefaultAddressUpdate(customerAccessToken: $customerAccessToken, addressId: $addressId) {
+        customer {
+          id
+        }
+        customerUserErrors {
+          code
+          field
+          message
+        }
+      }
+    }
+  `;
+
+  interface ResponseData {
+    customerDefaultAddressUpdate: {
+      customer: { id: string } | null;
+      customerUserErrors: Array<{ code: string; field: string[]; message: string }>;
+    };
+  }
+
+  const data = await executeShopifyGraphQL<ResponseData>(query, {
+    customerAccessToken: accessToken,
+    addressId,
+  });
+
+  const { customerUserErrors } = data.customerDefaultAddressUpdate;
+
+  if (customerUserErrors && customerUserErrors.length > 0) {
+    throw new Error(customerUserErrors[0].message || 'Could not set default address');
+  }
+
+  return true;
+}
