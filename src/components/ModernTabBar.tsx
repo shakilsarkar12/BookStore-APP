@@ -50,9 +50,8 @@ const TABS: TabConfig[] = [
   },
 ];
 
-const CIRCLE_SIZE = 60;
+const CIRCLE_SIZE = 58;
 const CIRCLE_RADIUS = CIRCLE_SIZE / 2;
-const FILLET_SIZE = 16;
 const BAR_HEIGHT = 70;
 
 export type ModernTabBarProps = Parameters<
@@ -124,7 +123,7 @@ export const ModernTabBar: React.FC<ModernTabBarProps> = ({
         ]}
         onLayout={onBarLayout}
       >
-        {/* The Single Sliding Indicator with Organic Curved Shoulders */}
+        {/* The Single Sliding Indicator with 100% transparent surrounds */}
         <Animated.View
           style={[
             styles.slidingIndicatorContainer,
@@ -135,32 +134,12 @@ export const ModernTabBar: React.FC<ModernTabBarProps> = ({
             },
           ]}
         >
-          {/* Left Smooth Curved Fillet */}
-          <View
-            style={[
-              styles.leftFillet,
-              {
-                left: tabWidth / 2 - CIRCLE_RADIUS - FILLET_SIZE + 0.5,
-              },
-            ]}
-          />
-
           {/* Main Floating Center Circle */}
           <View
             style={[
               styles.indicatorCircle,
               {
                 left: tabWidth / 2 - CIRCLE_RADIUS,
-              },
-            ]}
-          />
-
-          {/* Right Smooth Curved Fillet */}
-          <View
-            style={[
-              styles.rightFillet,
-              {
-                left: tabWidth / 2 + CIRCLE_RADIUS - 0.5,
               },
             ]}
           />
@@ -277,22 +256,6 @@ const styles = StyleSheet.create({
     height: BAR_HEIGHT,
     zIndex: 1,
   },
-  leftFillet: {
-    position: 'absolute',
-    top: -FILLET_SIZE + 0.5,
-    width: FILLET_SIZE,
-    height: FILLET_SIZE,
-    backgroundColor: colors.card,
-    borderTopLeftRadius: FILLET_SIZE,
-  },
-  rightFillet: {
-    position: 'absolute',
-    top: -FILLET_SIZE + 0.5,
-    width: FILLET_SIZE,
-    height: FILLET_SIZE,
-    backgroundColor: colors.card,
-    borderTopRightRadius: FILLET_SIZE,
-  },
   indicatorCircle: {
     position: 'absolute',
     top: -24,
@@ -300,12 +263,12 @@ const styles = StyleSheet.create({
     height: CIRCLE_SIZE,
     borderRadius: CIRCLE_RADIUS,
     backgroundColor: colors.card,
-    borderWidth: 3,
-    borderColor: colors.background,
+    borderWidth: 2,
+    borderColor: colors.borderLight,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.12,
-    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.1,
+    shadowRadius: 6,
     elevation: 4,
   },
   tabsRow: {
