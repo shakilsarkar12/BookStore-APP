@@ -53,12 +53,17 @@ const TABS: TabConfig[] = [
 const CIRCLE_SIZE = 62;
 const CIRCLE_RADIUS = CIRCLE_SIZE / 2;
 const BORDER_WIDTH = 6;
-const WING_SIZE = 20;
+const WING_SIZE = 20; // radius of the rounded shoulder next to the circle
 const BAR_HEIGHT = 70;
 
-export type ModernTabBarProps = Parameters<
-  NonNullable<React.ComponentProps<typeof Tabs>['tabBar']>
->[0];
+// Horizontal distance from the circle center to the shoulder's curve center,
+// so the shoulder touches the circle's ring exactly.
+const WING_OFFSET = Math.sqrt(
+  (CIRCLE_RADIUS + WING_SIZE) * (CIRCLE_RADIUS + WING_SIZE) -
+  WING_SIZE * WING_SIZE
+);
+
+export type ModernTabBarProps = Parameters<NonNullable<React.ComponentProps<typeof Tabs>['tabBar']>>[0];
 
 export const ModernTabBar: React.FC<ModernTabBarProps> = ({
   state,
@@ -83,7 +88,7 @@ export const ModernTabBar: React.FC<ModernTabBarProps> = ({
   useEffect(() => {
     const useNative = Platform.OS !== 'web';
 
-    // 1. Slide the indicator circle horizontally
+    // 1. Slide the indicator horizontally
     Animated.spring(indicatorAnim, {
       toValue: state.index,
       useNativeDriver: useNative,
@@ -125,7 +130,7 @@ export const ModernTabBar: React.FC<ModernTabBarProps> = ({
         ]}
         onLayout={onBarLayout}
       >
-        {/* The Single Sliding Indicator with Organic Curved Cutouts (Exact match to Modern Navigation) */}
+        {/* Sliding indicator: left shoulder + right shoulder + circle */}
         <Animated.View
           style={[
             styles.slidingIndicatorContainer,
@@ -136,39 +141,30 @@ export const ModernTabBar: React.FC<ModernTabBarProps> = ({
             },
           ]}
         >
-          {/* Left Concave Wing (replicates .indicator::before) */}
+          {/* Left shoulder */}
           <View
-            style={[
-              styles.wingBase,
-              {
-                left: tabWidth / 2 - CIRCLE_RADIUS - WING_SIZE + 0.5,
-              },
-            ]}
+            style={[styles.wing, { left: tabWidth / 2 - WING_OFFSET }]}
           >
-            <View style={styles.leftWingCutout} />
+            <View style={styles.leftWingDisc} />
           </View>
 
-          {/* Floating Center Circle (replicates .indicator - NO SHADOW, pure border) */}
+          {/* Right shoulder */}
+          <View
+            style={[
+              styles.wing,
+              { left: tabWidth / 2 + WING_OFFSET - WING_SIZE },
+            ]}
+          >
+            <View style={styles.rightWingDisc} />
+          </View>
+
+          {/* Floating circle (drawn last so it sits on top) */}
           <View
             style={[
               styles.indicatorCircle,
-              {
-                left: tabWidth / 2 - CIRCLE_RADIUS,
-              },
+              { left: tabWidth / 2 - CIRCLE_RADIUS },
             ]}
           />
-
-          {/* Right Concave Wing (replicates .indicator::after) */}
-          <View
-            style={[
-              styles.wingBase,
-              {
-                left: tabWidth / 2 + CIRCLE_RADIUS - 0.5,
-              },
-            ]}
-          >
-            <View style={styles.rightWingCutout} />
-          </View>
         </Animated.View>
 
         {/* Tab Items Row */}
@@ -189,13 +185,12 @@ export const ModernTabBar: React.FC<ModernTabBarProps> = ({
               }
             };
 
-            // Active icon lifts up into the elevated circle (translateY: -32px)
+            // Lift the active icon to the exact center of the circle
             const iconTranslateY = tabAnims[index].interpolate({
               inputRange: [0, 1],
-              outputRange: [0, -32],
+              outputRange: [0, -BAR_HEIGHT / 2],
             });
 
-            // Text label slides smoothly into position inside the bar
             const textTranslateY = tabAnims[index].interpolate({
               inputRange: [0, 1],
               outputRange: [10, 0],
@@ -218,13 +213,10 @@ export const ModernTabBar: React.FC<ModernTabBarProps> = ({
                 accessibilityState={{ selected: isFocused }}
                 accessibilityLabel={tab.label}
               >
-                {/* Icon Container with lift */}
                 <Animated.View
                   style={[
                     styles.iconWrapper,
-                    {
-                      transform: [{ translateY: iconTranslateY }],
-                    },
+                    { transform: [{ translateY: iconTranslateY }] },
                   ]}
                 >
                   <Ionicons
@@ -243,7 +235,6 @@ export const ModernTabBar: React.FC<ModernTabBarProps> = ({
                   ) : null}
                 </Animated.View>
 
-                {/* Text Label sliding up */}
                 <Animated.Text
                   style={[
                     styles.tabText,
@@ -266,14 +257,15 @@ export const ModernTabBar: React.FC<ModernTabBarProps> = ({
 };
 
 const styles = StyleSheet.create({
+  // Extra space on top holds the upper half of the circle,
+  // so it never covers the screen content.
   rootContainer: {
-    backgroundColor: colors.card,
+    backgroundColor: colors.background,
+    paddingTop: CIRCLE_RADIUS,
   },
   barOuter: {
     backgroundColor: colors.card,
     position: 'relative',
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.borderLight,
   },
   slidingIndicatorContainer: {
     position: 'absolute',
@@ -282,36 +274,43 @@ const styles = StyleSheet.create({
     height: BAR_HEIGHT,
     zIndex: 1,
   },
-  wingBase: {
+  // Square filled with screen color; a bar-colored disc is cut into its
+  // bottom corner, which leaves a rounded shoulder on the bar.
+  wing: {
     position: 'absolute',
     top: 0,
     width: WING_SIZE,
     height: WING_SIZE,
-    backgroundColor: colors.card, // Base is bar color
+    backgroundColor: colors.background,
     overflow: 'hidden',
   },
-  leftWingCutout: {
-    width: WING_SIZE,
-    height: WING_SIZE,
-    backgroundColor: colors.background, // Cuts out into screen background
-    borderBottomRightRadius: WING_SIZE,
+  leftWingDisc: {
+    position: 'absolute',
+    top: 0,
+    left: -WING_SIZE,
+    width: WING_SIZE * 2,
+    height: WING_SIZE * 2,
+    borderRadius: WING_SIZE,
+    backgroundColor: colors.card,
   },
-  rightWingCutout: {
-    width: WING_SIZE,
-    height: WING_SIZE,
-    backgroundColor: colors.background, // Cuts out into screen background
-    borderBottomLeftRadius: WING_SIZE,
+  rightWingDisc: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    width: WING_SIZE * 2,
+    height: WING_SIZE * 2,
+    borderRadius: WING_SIZE,
+    backgroundColor: colors.card,
   },
   indicatorCircle: {
     position: 'absolute',
-    top: -CIRCLE_RADIUS, // -31px
+    top: -CIRCLE_RADIUS,
     width: CIRCLE_SIZE,
     height: CIRCLE_SIZE,
     borderRadius: CIRCLE_RADIUS,
     backgroundColor: colors.card,
     borderWidth: BORDER_WIDTH,
-    borderColor: colors.background, // 6px solid border matching background (exact match to Modern Navigation)
-    // NO SHADOW
+    borderColor: colors.background,
   },
   tabsRow: {
     flexDirection: 'row',
