@@ -17,6 +17,7 @@ import { getBookById } from '../../src/api/shopifyClient';
 import { Header } from '../../src/components/Header';
 import { Badge } from '../../src/components/Badge';
 import { useCartStore } from '../../src/store/useCartStore';
+import { useCustomerStore } from '../../src/store/useCustomerStore';
 import { colors } from '../../src/theme/colors';
 import { typography, radii, spacing, shadows } from '../../src/theme/typography';
 
@@ -28,10 +29,12 @@ export default function ProductDetailScreen() {
   const [selectedVariant, setSelectedVariant] = useState<BookVariant | null>(null);
   const [quantity, setQuantity] = useState<number>(1);
   const [loading, setLoading] = useState<boolean>(true);
-  const [isDescriptionExpanded, setIsDescriptionExpanded] = useState<boolean>(false);
   const [addedSuccess, setAddedSuccess] = useState<boolean>(false);
+  const [isDescriptionExpanded, setIsDescriptionExpanded] = useState<boolean>(false);
 
   const addItem = useCartStore((state) => state.addItem);
+  const isWishlisted = useCustomerStore((state) => (book ? state.isWishlisted(book.id) : false));
+  const toggleWishlist = useCustomerStore((state) => state.toggleWishlist);
 
   useEffect(() => {
     async function loadBook() {
@@ -343,26 +346,45 @@ export default function ProductDetailScreen() {
           </View>
         </View>
 
-        <TouchableOpacity
-          style={[
-            styles.addToCartButton,
-            addedSuccess && styles.addToCartButtonSuccess,
-          ]}
-          onPress={handleAddToCart}
-          activeOpacity={0.88}
-        >
-          {addedSuccess ? (
-            <View style={styles.buttonInnerRow}>
-              <Ionicons name="checkmark-circle" size={18} color={colors.textInverse} />
-              <Text style={styles.addToCartText}>Added to Cart!</Text>
-            </View>
-          ) : (
-            <View style={styles.buttonInnerRow}>
-              <Ionicons name="bag-add" size={18} color={colors.textInverse} />
-              <Text style={styles.addToCartText}>Add to Cart</Text>
-            </View>
-          )}
-        </TouchableOpacity>
+        <View style={styles.actionRow}>
+          <TouchableOpacity
+            style={[
+              styles.wishlistCircleButton,
+              isWishlisted && styles.wishlistCircleButtonActive,
+            ]}
+            onPress={() => book && toggleWishlist(book.id)}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel={isWishlisted ? 'Remove from wishlist' : 'Save to wishlist'}
+          >
+            <Ionicons
+              name={isWishlisted ? 'heart' : 'heart-outline'}
+              size={22}
+              color={isWishlisted ? colors.error : colors.primary}
+            />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[
+              styles.addToCartButton,
+              addedSuccess && styles.addToCartButtonSuccess,
+            ]}
+            onPress={handleAddToCart}
+            activeOpacity={0.88}
+          >
+            {addedSuccess ? (
+              <View style={styles.buttonInnerRow}>
+                <Ionicons name="checkmark-circle" size={18} color={colors.textInverse} />
+                <Text style={styles.addToCartText}>Added to Cart!</Text>
+              </View>
+            ) : (
+              <View style={styles.buttonInnerRow}>
+                <Ionicons name="bag-add" size={18} color={colors.textInverse} />
+                <Text style={styles.addToCartText}>Add to Cart</Text>
+              </View>
+            )}
+          </TouchableOpacity>
+        </View>
       </View>
     </SafeAreaView>
   );
@@ -628,7 +650,27 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     color: colors.textPrimary,
   },
+  actionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+  },
+  wishlistCircleButton: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: colors.surface,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  wishlistCircleButtonActive: {
+    backgroundColor: '#FEE2E2',
+    borderColor: '#FECACA',
+  },
   addToCartButton: {
+    flex: 1,
     backgroundColor: colors.primary,
     paddingVertical: spacing.md,
     borderRadius: radii.md,

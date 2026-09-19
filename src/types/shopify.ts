@@ -168,3 +168,72 @@ export interface CartStoreState {
   getTotalItems: () => number;
   getSubtotal: () => number;
 }
+
+// Shopify Customer Account Types
+export interface CustomerAddress {
+  id: string;
+  name?: string;
+  firstName?: string;
+  lastName?: string;
+  address1: string;
+  address2?: string;
+  city: string;
+  province?: string;
+  zip: string;
+  country: string;
+  phone?: string;
+  isDefault?: boolean;
+}
+
+export interface CustomerOrderLineItem {
+  id: string;
+  title: string;
+  quantity: number;
+  price: number;
+  imageUrl?: string;
+}
+
+export interface CustomerOrder {
+  id: string;
+  orderNumber: string;
+  name: string;
+  processedAt: string;
+  financialStatus: 'PAID' | 'PENDING' | 'REFUNDED' | string;
+  fulfillmentStatus: 'FULFILLED' | 'UNFULFILLED' | 'IN_TRANSIT' | string;
+  totalPrice: number;
+  currencyCode: string;
+  trackingNumber?: string;
+  estimatedDelivery?: string;
+  lineItems: CustomerOrderLineItem[];
+  shippingAddress?: CustomerAddress;
+}
+
+export interface CustomerProfile {
+  id: string;
+  displayName: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  phone?: string;
+  memberTier: 'Bronze Reader' | 'Silver Collector' | 'Gold VIP Bookworm';
+  points: number;
+  defaultAddress?: CustomerAddress;
+  addresses: CustomerAddress[];
+  orders: CustomerOrder[];
+}
+
+export interface CustomerStoreState {
+  isAuthenticated: boolean;
+  customer: CustomerProfile | null;
+  wishlistProductIds: string[];
+  isLoading: boolean;
+  loginWithShopify: () => Promise<boolean>;
+  loginAsGuestOrDemo: () => void;
+  logout: () => void;
+  toggleWishlist: (productId: string) => void;
+  isWishlisted: (productId: string) => boolean;
+  addAddress: (address: Omit<CustomerAddress, 'id'>) => void;
+  updateAddress: (id: string, address: Partial<CustomerAddress>) => void;
+  deleteAddress: (id: string) => void;
+  setDefaultAddress: (id: string) => void;
+}
