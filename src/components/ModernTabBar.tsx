@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import Svg, { Path } from 'react-native-svg';
 import type { Tabs } from 'expo-router';
 import { colors } from '../theme/colors';
 import { typography } from '../theme/typography';
@@ -50,10 +51,10 @@ const TABS: TabConfig[] = [
   },
 ];
 
-const CIRCLE_SIZE = 62;
+const SCOOP_WIDTH = 96;
+const SCOOP_HEIGHT = 36;
+const CIRCLE_SIZE = 56;
 const CIRCLE_RADIUS = CIRCLE_SIZE / 2;
-const BORDER_WIDTH = 6;
-const WING_SIZE = 20;
 const BAR_HEIGHT = 70;
 
 export type ModernTabBarProps = Parameters<
@@ -114,13 +115,18 @@ export const ModernTabBar: React.FC<ModernTabBarProps> = ({
     outputRange: TABS.map((_, i) => i * tabWidth),
   });
 
-  const bottomPadding =
-    insets.bottom > 0 ? insets.bottom : Platform.OS === 'android' ? 10 : 8;
+  const safeBottom = Math.max(insets.bottom, 0);
 
   return (
-    <View style={[styles.rootContainer, { paddingBottom: bottomPadding }]}>
-      <View style={styles.barOuter} onLayout={onBarLayout}>
-        {/* The Single Sliding Indicator with Organic Concave Wings (Exact match to Modern-Navigation) */}
+    <View style={styles.rootContainer}>
+      <View
+        style={[
+          styles.barOuter,
+          { height: BAR_HEIGHT + safeBottom, paddingBottom: safeBottom },
+        ]}
+        onLayout={onBarLayout}
+      >
+        {/* The Single Sliding Indicator with Smooth Continuous SVG Scoop (Exact match to Modern-Navigation) */}
         <Animated.View
           style={[
             styles.slidingIndicatorContainer,
@@ -131,19 +137,24 @@ export const ModernTabBar: React.FC<ModernTabBarProps> = ({
             },
           ]}
         >
-          {/* Left Concave Wing (replicates .indicator::before with pure native circular arc) */}
+          {/* Continuous Organic Scoop Notch */}
           <View
             style={[
-              styles.wingContainer,
+              styles.scoopContainer,
               {
-                left: tabWidth / 2 - CIRCLE_RADIUS - WING_SIZE + 0.5,
+                left: tabWidth / 2 - SCOOP_WIDTH / 2,
               },
             ]}
           >
-            <View style={styles.leftWingCircle} />
+            <Svg width={SCOOP_WIDTH} height={SCOOP_HEIGHT} viewBox="0 0 96 36">
+              <Path
+                d="M 0 0 C 24 0, 32 36, 48 36 C 64 36, 72 0, 96 0 L 96 0 L 0 0 Z"
+                fill={colors.background}
+              />
+            </Svg>
           </View>
 
-          {/* Floating Center Circle (replicates .indicator) */}
+          {/* Floating Center Circle Nestled in the Scoop */}
           <View
             style={[
               styles.indicatorCircle,
@@ -152,18 +163,6 @@ export const ModernTabBar: React.FC<ModernTabBarProps> = ({
               },
             ]}
           />
-
-          {/* Right Concave Wing (replicates .indicator::after with pure native circular arc) */}
-          <View
-            style={[
-              styles.wingContainer,
-              {
-                left: tabWidth / 2 + CIRCLE_RADIUS - 0.5,
-              },
-            ]}
-          >
-            <View style={styles.rightWingCircle} />
-          </View>
         </Animated.View>
 
         {/* Tab Items Row */}
@@ -184,16 +183,13 @@ export const ModernTabBar: React.FC<ModernTabBarProps> = ({
               }
             };
 
-            // EXACT CSS MATCH:
-            // .navigation ul li.active a .icon { transform: translateY(-32px); }
+            // Icon lifts up into the elevated circle
             const iconTranslateY = tabAnims[index].interpolate({
               inputRange: [0, 1],
-              outputRange: [0, -32],
+              outputRange: [0, -28],
             });
 
-            // EXACT CSS MATCH:
-            // .navigation ul li a .text { transform: translateY(20px); opacity: 0; }
-            // .navigation ul li.active a .text { transform: translateY(10px); opacity: 1; }
+            // Text label appears smoothly below
             const textTranslateY = tabAnims[index].interpolate({
               inputRange: [0, 1],
               outputRange: [20, 10],
@@ -216,7 +212,7 @@ export const ModernTabBar: React.FC<ModernTabBarProps> = ({
                 accessibilityState={{ selected: isFocused }}
                 accessibilityLabel={tab.label}
               >
-                {/* Icon Container with translateY(-32px) lift */}
+                {/* Icon Container with lift */}
                 <Animated.View
                   style={[
                     styles.iconWrapper,
@@ -241,7 +237,7 @@ export const ModernTabBar: React.FC<ModernTabBarProps> = ({
                   ) : null}
                 </Animated.View>
 
-                {/* Text Label sliding up to translateY(10px) with opacity 1 */}
+                {/* Text Label sliding up */}
                 <Animated.Text
                   style={[
                     styles.tabText,
@@ -265,23 +261,13 @@ export const ModernTabBar: React.FC<ModernTabBarProps> = ({
 
 const styles = StyleSheet.create({
   rootContainer: {
-    backgroundColor: colors.background, // Matches the screen background
+    backgroundColor: colors.card, // Matches bar background to ensure zero bottom gap
   },
   barOuter: {
-    height: BAR_HEIGHT,
-    backgroundColor: colors.card, // White bar (or main-color)
+    backgroundColor: colors.card, // White bar
     position: 'relative',
-    ...Platform.select({
-      ios: {
-        shadowColor: '#0F172A',
-        shadowOffset: { width: 0, height: -3 },
-        shadowOpacity: 0.06,
-        shadowRadius: 10,
-      },
-      android: {
-        elevation: 10,
-      },
-    }),
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.borderLight,
   },
   slidingIndicatorContainer: {
     position: 'absolute',
@@ -290,52 +276,21 @@ const styles = StyleSheet.create({
     height: BAR_HEIGHT,
     zIndex: 1,
   },
+  scoopContainer: {
+    position: 'absolute',
+    top: 0,
+    width: SCOOP_WIDTH,
+    height: SCOOP_HEIGHT,
+  },
   indicatorCircle: {
     position: 'absolute',
-    top: -CIRCLE_RADIUS, // -31px: exactly top: -50% in CSS!
+    top: -CIRCLE_RADIUS + 8,
     width: CIRCLE_SIZE,
     height: CIRCLE_SIZE,
     borderRadius: CIRCLE_RADIUS,
-    backgroundColor: colors.card, // Matches bar background
-    borderWidth: BORDER_WIDTH,
-    borderColor: colors.background, // Exactly border: 6px solid var(--color) in CSS!
-    ...Platform.select({
-      ios: {
-        shadowColor: '#0F172A',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.12,
-        shadowRadius: 6,
-      },
-      android: {
-        elevation: 6,
-      },
-    }),
-  },
-  wingContainer: {
-    position: 'absolute',
-    top: 0,
-    width: WING_SIZE,
-    height: WING_SIZE,
-    backgroundColor: colors.background, // Cutout area matching screen background
-    overflow: 'hidden',
-  },
-  leftWingCircle: {
-    position: 'absolute',
-    left: -WING_SIZE, // center at (0, 20)
-    top: 0,
-    width: WING_SIZE * 2, // 40
-    height: WING_SIZE * 2, // 40
-    borderRadius: WING_SIZE, // 20
-    backgroundColor: colors.card, // Bar color fills the bottom-left
-  },
-  rightWingCircle: {
-    position: 'absolute',
-    left: 0, // center at (20, 20)
-    top: 0,
-    width: WING_SIZE * 2, // 40
-    height: WING_SIZE * 2, // 40
-    borderRadius: WING_SIZE, // 20
-    backgroundColor: colors.card, // Bar color fills the bottom-right
+    backgroundColor: colors.card,
+    borderWidth: 4,
+    borderColor: colors.background,
   },
   tabsRow: {
     flexDirection: 'row',
