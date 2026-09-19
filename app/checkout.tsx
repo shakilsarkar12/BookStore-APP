@@ -199,35 +199,80 @@ export default function CheckoutScreen() {
           </View>
         </View>
 
-        <TouchableOpacity
-          style={styles.headerBtn}
-          onPress={() => webViewRef.current?.reload()}
-          accessibilityLabel="Refresh checkout page"
-        >
-          <Ionicons name="reload-outline" size={18} color={colors.textPrimary} />
-        </TouchableOpacity>
+        <View style={styles.headerRightActions}>
+          <TouchableOpacity
+            style={styles.headerBtn}
+            onPress={() => WebBrowser.openBrowserAsync(checkoutUrl)}
+            accessibilityLabel="Open in system browser"
+          >
+            <Ionicons name="open-outline" size={18} color={colors.primary} />
+          </TouchableOpacity>
+          {Platform.OS !== 'web' && (
+            <TouchableOpacity
+              style={styles.headerBtn}
+              onPress={() => webViewRef.current?.reload()}
+              accessibilityLabel="Refresh checkout page"
+            >
+              <Ionicons name="reload-outline" size={18} color={colors.textPrimary} />
+            </TouchableOpacity>
+          )}
+        </View>
       </View>
 
-      {/* Embedded Shopify Checkout Page */}
-      <View style={styles.webviewWrapper}>
-        <WebView
-          ref={webViewRef}
-          source={{ uri: checkoutUrl }}
-          style={styles.webview}
-          javaScriptEnabled={true}
-          domStorageEnabled={true}
-          startInLoadingState={true}
-          onLoadStart={() => setIsWebviewLoading(true)}
-          onLoadEnd={() => setIsWebviewLoading(false)}
-          onNavigationStateChange={handleNavigationStateChange}
-          renderLoading={() => (
-            <View style={styles.webviewLoadingOverlay}>
-              <ActivityIndicator size="large" color={colors.primary} />
-              <Text style={styles.webviewLoadingText}>Loading Checkout...</Text>
-            </View>
-          )}
-        />
-      </View>
+      {/* Embedded Shopify Checkout Page for Native / Web Fallback */}
+      {Platform.OS === 'web' ? (
+        <View style={styles.webContainer}>
+          <Ionicons name="bag-check-outline" size={64} color={colors.primary} />
+          <Text style={styles.webTitle}>Ready for Checkout</Text>
+          <Text style={styles.webSubtitle}>
+            Shopify requires opening checkout in a secure tab for payment authentication and Shop Pay.
+          </Text>
+          <TouchableOpacity
+            style={styles.primaryActionBtn}
+            onPress={() => {
+              if (Platform.OS === 'web') {
+                if (typeof (globalThis as any).window !== 'undefined') {
+                  (globalThis as any).window.location.href = checkoutUrl;
+                } else {
+                  WebBrowser.openBrowserAsync(checkoutUrl);
+                }
+              } else {
+                WebBrowser.openBrowserAsync(checkoutUrl);
+              }
+            }}
+          >
+            <Text style={styles.primaryActionBtnText}>Proceed to Secure Payment</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.secondaryActionBtn}
+            onPress={() => router.back()}
+          >
+            <Text style={styles.secondaryActionBtnText}>Back to Cart</Text>
+          </TouchableOpacity>
+        </View>
+      ) : (
+        <View style={styles.webviewWrapper}>
+          <WebView
+            ref={webViewRef}
+            source={{ uri: checkoutUrl }}
+            style={styles.webview}
+            javaScriptEnabled={true}
+            domStorageEnabled={true}
+            sharedCookiesEnabled={true}
+            originWhitelist={['*']}
+            startInLoadingState={true}
+            onLoadStart={() => setIsWebviewLoading(true)}
+            onLoadEnd={() => setIsWebviewLoading(false)}
+            onNavigationStateChange={handleNavigationStateChange}
+            renderLoading={() => (
+              <View style={styles.webviewLoadingOverlay}>
+                <ActivityIndicator size="large" color={colors.primary} />
+                <Text style={styles.webviewLoadingText}>Loading Checkout...</Text>
+              </View>
+            )}
+          />
+        </View>
+      )}
     </SafeAreaView>
   );
 }
@@ -258,6 +303,11 @@ const styles = StyleSheet.create({
   headerCenterBox: {
     alignItems: 'center',
   },
+  headerRightActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
   headerTitle: {
     ...typography.subtitle,
     fontWeight: '700',
@@ -274,6 +324,28 @@ const styles = StyleSheet.create({
     color: colors.success,
     fontWeight: '700',
     marginLeft: 3,
+  },
+  webContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: spacing.xl,
+    backgroundColor: colors.background,
+  },
+  webTitle: {
+    ...typography.h2,
+    color: colors.textPrimary,
+    marginTop: spacing.lg,
+    marginBottom: spacing.xs,
+    textAlign: 'center',
+  },
+  webSubtitle: {
+    ...typography.body,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    lineHeight: 22,
+    marginBottom: spacing.xl,
+    maxWidth: 400,
   },
   webviewWrapper: {
     flex: 1,
