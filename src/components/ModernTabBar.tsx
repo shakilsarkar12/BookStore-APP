@@ -11,7 +11,6 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import Svg, { Path } from 'react-native-svg';
 import type { Tabs } from 'expo-router';
 import { colors } from '../theme/colors';
 import { typography } from '../theme/typography';
@@ -51,9 +50,7 @@ const TABS: TabConfig[] = [
   },
 ];
 
-const SCOOP_WIDTH = 96;
-const SCOOP_HEIGHT = 36;
-const CIRCLE_SIZE = 56;
+const CIRCLE_SIZE = 58;
 const CIRCLE_RADIUS = CIRCLE_SIZE / 2;
 const BAR_HEIGHT = 70;
 
@@ -126,7 +123,7 @@ export const ModernTabBar: React.FC<ModernTabBarProps> = ({
         ]}
         onLayout={onBarLayout}
       >
-        {/* The Single Sliding Indicator with Smooth Continuous SVG Scoop (Exact match to Modern-Navigation) */}
+        {/* The Single Sliding Indicator with 100% transparent surrounds */}
         <Animated.View
           style={[
             styles.slidingIndicatorContainer,
@@ -137,24 +134,7 @@ export const ModernTabBar: React.FC<ModernTabBarProps> = ({
             },
           ]}
         >
-          {/* Continuous Organic Scoop Notch */}
-          <View
-            style={[
-              styles.scoopContainer,
-              {
-                left: tabWidth / 2 - SCOOP_WIDTH / 2,
-              },
-            ]}
-          >
-            <Svg width={SCOOP_WIDTH} height={SCOOP_HEIGHT} viewBox="0 0 96 36">
-              <Path
-                d="M 0 0 C 24 0, 32 36, 48 36 C 64 36, 72 0, 96 0 L 96 0 L 0 0 Z"
-                fill={colors.background}
-              />
-            </Svg>
-          </View>
-
-          {/* Floating Center Circle Nestled in the Scoop */}
+          {/* Main Floating Center Circle */}
           <View
             style={[
               styles.indicatorCircle,
@@ -183,13 +163,16 @@ export const ModernTabBar: React.FC<ModernTabBarProps> = ({
               }
             };
 
-            // Icon lifts up into the elevated circle
+            // EXACT CSS MATCH:
+            // .navigation ul li.active a .icon { transform: translateY(-32px); }
             const iconTranslateY = tabAnims[index].interpolate({
               inputRange: [0, 1],
-              outputRange: [0, -28],
+              outputRange: [0, -32],
             });
 
-            // Text label appears smoothly below
+            // EXACT CSS MATCH:
+            // .navigation ul li a .text { transform: translateY(20px); opacity: 0; }
+            // .navigation ul li.active a .text { transform: translateY(10px); opacity: 1; }
             const textTranslateY = tabAnims[index].interpolate({
               inputRange: [0, 1],
               outputRange: [20, 10],
@@ -276,21 +259,20 @@ const styles = StyleSheet.create({
     height: BAR_HEIGHT,
     zIndex: 1,
   },
-  scoopContainer: {
-    position: 'absolute',
-    top: 0,
-    width: SCOOP_WIDTH,
-    height: SCOOP_HEIGHT,
-  },
   indicatorCircle: {
     position: 'absolute',
-    top: -CIRCLE_RADIUS + 8,
+    top: -24,
     width: CIRCLE_SIZE,
     height: CIRCLE_SIZE,
     borderRadius: CIRCLE_RADIUS,
     backgroundColor: colors.card,
-    borderWidth: 4,
-    borderColor: colors.background,
+    borderWidth: 2,
+    borderColor: colors.borderLight,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    elevation: 3,
   },
   tabsRow: {
     flexDirection: 'row',
