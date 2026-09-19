@@ -50,8 +50,9 @@ const TABS: TabConfig[] = [
   },
 ];
 
-const CIRCLE_SIZE = 58;
+const CIRCLE_SIZE = 60;
 const CIRCLE_RADIUS = CIRCLE_SIZE / 2;
+const FILLET_SIZE = 16;
 const BAR_HEIGHT = 70;
 
 export type ModernTabBarProps = Parameters<
@@ -85,7 +86,7 @@ export const ModernTabBar: React.FC<ModernTabBarProps> = ({
     Animated.spring(indicatorAnim, {
       toValue: state.index,
       useNativeDriver: useNative,
-      tension: 52,
+      tension: 55,
       friction: 8.5,
     }).start();
 
@@ -94,7 +95,7 @@ export const ModernTabBar: React.FC<ModernTabBarProps> = ({
       Animated.spring(tabAnims[i], {
         toValue: state.index === i ? 1 : 0,
         useNativeDriver: useNative,
-        tension: 52,
+        tension: 55,
         friction: 8.5,
       }).start();
     });
@@ -123,7 +124,7 @@ export const ModernTabBar: React.FC<ModernTabBarProps> = ({
         ]}
         onLayout={onBarLayout}
       >
-        {/* The Single Sliding Indicator with 100% transparent surrounds */}
+        {/* The Single Sliding Indicator with Organic Curved Shoulders */}
         <Animated.View
           style={[
             styles.slidingIndicatorContainer,
@@ -134,12 +135,32 @@ export const ModernTabBar: React.FC<ModernTabBarProps> = ({
             },
           ]}
         >
+          {/* Left Smooth Curved Fillet */}
+          <View
+            style={[
+              styles.leftFillet,
+              {
+                left: tabWidth / 2 - CIRCLE_RADIUS - FILLET_SIZE + 0.5,
+              },
+            ]}
+          />
+
           {/* Main Floating Center Circle */}
           <View
             style={[
               styles.indicatorCircle,
               {
                 left: tabWidth / 2 - CIRCLE_RADIUS,
+              },
+            ]}
+          />
+
+          {/* Right Smooth Curved Fillet */}
+          <View
+            style={[
+              styles.rightFillet,
+              {
+                left: tabWidth / 2 + CIRCLE_RADIUS - 0.5,
               },
             ]}
           />
@@ -163,19 +184,16 @@ export const ModernTabBar: React.FC<ModernTabBarProps> = ({
               }
             };
 
-            // EXACT CSS MATCH:
-            // .navigation ul li.active a .icon { transform: translateY(-32px); }
+            // Active icon lifts up into the elevated circle
             const iconTranslateY = tabAnims[index].interpolate({
               inputRange: [0, 1],
-              outputRange: [0, -32],
+              outputRange: [0, -28],
             });
 
-            // EXACT CSS MATCH:
-            // .navigation ul li a .text { transform: translateY(20px); opacity: 0; }
-            // .navigation ul li.active a .text { transform: translateY(10px); opacity: 1; }
+            // Text label slides smoothly into position inside the bar
             const textTranslateY = tabAnims[index].interpolate({
               inputRange: [0, 1],
-              outputRange: [20, 10],
+              outputRange: [10, 0],
             });
 
             const textOpacity = tabAnims[index].interpolate({
@@ -244,10 +262,10 @@ export const ModernTabBar: React.FC<ModernTabBarProps> = ({
 
 const styles = StyleSheet.create({
   rootContainer: {
-    backgroundColor: colors.card, // Matches bar background to ensure zero bottom gap
+    backgroundColor: colors.card,
   },
   barOuter: {
-    backgroundColor: colors.card, // White bar
+    backgroundColor: colors.card,
     position: 'relative',
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: colors.borderLight,
@@ -259,6 +277,22 @@ const styles = StyleSheet.create({
     height: BAR_HEIGHT,
     zIndex: 1,
   },
+  leftFillet: {
+    position: 'absolute',
+    top: -FILLET_SIZE + 0.5,
+    width: FILLET_SIZE,
+    height: FILLET_SIZE,
+    backgroundColor: colors.card,
+    borderTopLeftRadius: FILLET_SIZE,
+  },
+  rightFillet: {
+    position: 'absolute',
+    top: -FILLET_SIZE + 0.5,
+    width: FILLET_SIZE,
+    height: FILLET_SIZE,
+    backgroundColor: colors.card,
+    borderTopRightRadius: FILLET_SIZE,
+  },
   indicatorCircle: {
     position: 'absolute',
     top: -24,
@@ -266,13 +300,13 @@ const styles = StyleSheet.create({
     height: CIRCLE_SIZE,
     borderRadius: CIRCLE_RADIUS,
     backgroundColor: colors.card,
-    borderWidth: 2,
-    borderColor: colors.borderLight,
+    borderWidth: 3,
+    borderColor: colors.background,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.08,
-    shadowRadius: 6,
-    elevation: 3,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.12,
+    shadowRadius: 8,
+    elevation: 4,
   },
   tabsRow: {
     flexDirection: 'row',
@@ -287,8 +321,8 @@ const styles = StyleSheet.create({
     position: 'relative',
   },
   iconWrapper: {
-    width: 40,
-    height: 40,
+    width: 44,
+    height: 44,
     justifyContent: 'center',
     alignItems: 'center',
     position: 'relative',
@@ -296,7 +330,7 @@ const styles = StyleSheet.create({
   tabText: {
     ...typography.caption,
     position: 'absolute',
-    bottom: 12,
+    top: 42,
     fontSize: 12,
     fontWeight: '600',
     color: colors.primary,

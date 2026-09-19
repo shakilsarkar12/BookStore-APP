@@ -285,7 +285,7 @@ const styles = StyleSheet.create({
   listContent: {
     paddingHorizontal: spacing.md,
     paddingTop: spacing.md,
-    paddingBottom: spacing.xxxl,
+    paddingBottom: 110,
   },
   columnWrapper: {
     justifyContent: 'space-between',
