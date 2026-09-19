@@ -11,7 +11,6 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import Svg, { Path } from 'react-native-svg';
 import type { Tabs } from 'expo-router';
 import { colors } from '../theme/colors';
 import { typography } from '../theme/typography';
@@ -121,7 +120,7 @@ export const ModernTabBar: React.FC<ModernTabBarProps> = ({
   return (
     <View style={[styles.rootContainer, { paddingBottom: bottomPadding }]}>
       <View style={styles.barOuter} onLayout={onBarLayout}>
-        {/* The Single Sliding Indicator with Organic Concave SVG Wings (Exact match to Modern-Navigation) */}
+        {/* The Single Sliding Indicator with Organic Concave Wings (Exact match to Modern-Navigation) */}
         <Animated.View
           style={[
             styles.slidingIndicatorContainer,
@@ -132,21 +131,16 @@ export const ModernTabBar: React.FC<ModernTabBarProps> = ({
             },
           ]}
         >
-          {/* Left Concave Wing (replicates .indicator::before) */}
+          {/* Left Concave Wing (replicates .indicator::before with pure native circular arc) */}
           <View
             style={[
-              styles.wingBase,
+              styles.wingContainer,
               {
                 left: tabWidth / 2 - CIRCLE_RADIUS - WING_SIZE + 0.5,
               },
             ]}
           >
-            <Svg width={WING_SIZE} height={WING_SIZE} viewBox="0 0 20 20">
-              <Path
-                d="M 0 0 L 20 0 L 20 20 A 20 20 0 0 0 0 0 Z"
-                fill={colors.background}
-              />
-            </Svg>
+            <View style={styles.leftWingCircle} />
           </View>
 
           {/* Floating Center Circle (replicates .indicator) */}
@@ -159,21 +153,16 @@ export const ModernTabBar: React.FC<ModernTabBarProps> = ({
             ]}
           />
 
-          {/* Right Concave Wing (replicates .indicator::after) */}
+          {/* Right Concave Wing (replicates .indicator::after with pure native circular arc) */}
           <View
             style={[
-              styles.wingBase,
+              styles.wingContainer,
               {
                 left: tabWidth / 2 + CIRCLE_RADIUS - 0.5,
               },
             ]}
           >
-            <Svg width={WING_SIZE} height={WING_SIZE} viewBox="0 0 20 20">
-              <Path
-                d="M 0 0 L 20 0 A 20 20 0 0 0 0 20 L 0 0 Z"
-                fill={colors.background}
-              />
-            </Svg>
+            <View style={styles.rightWingCircle} />
           </View>
         </Animated.View>
 
@@ -322,12 +311,31 @@ const styles = StyleSheet.create({
       },
     }),
   },
-  wingBase: {
+  wingContainer: {
     position: 'absolute',
     top: 0,
     width: WING_SIZE,
     height: WING_SIZE,
-    backgroundColor: 'transparent',
+    backgroundColor: colors.background, // Cutout area matching screen background
+    overflow: 'hidden',
+  },
+  leftWingCircle: {
+    position: 'absolute',
+    left: -WING_SIZE, // center at (0, 20)
+    top: 0,
+    width: WING_SIZE * 2, // 40
+    height: WING_SIZE * 2, // 40
+    borderRadius: WING_SIZE, // 20
+    backgroundColor: colors.card, // Bar color fills the bottom-left
+  },
+  rightWingCircle: {
+    position: 'absolute',
+    left: 0, // center at (20, 20)
+    top: 0,
+    width: WING_SIZE * 2, // 40
+    height: WING_SIZE * 2, // 40
+    borderRadius: WING_SIZE, // 20
+    backgroundColor: colors.card, // Bar color fills the bottom-right
   },
   tabsRow: {
     flexDirection: 'row',
