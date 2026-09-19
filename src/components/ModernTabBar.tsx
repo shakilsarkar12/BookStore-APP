@@ -81,10 +81,12 @@ export const ModernTabBar: React.FC<ModernTabBarProps> = ({
   ).current;
 
   useEffect(() => {
+    const useNative = Platform.OS !== 'web';
+
     // 1. Slide the indicator circle horizontally
     Animated.spring(indicatorAnim, {
       toValue: state.index,
-      useNativeDriver: true,
+      useNativeDriver: useNative,
       tension: 52,
       friction: 8.5,
     }).start();
@@ -93,7 +95,7 @@ export const ModernTabBar: React.FC<ModernTabBarProps> = ({
     TABS.forEach((_, i) => {
       Animated.spring(tabAnims[i], {
         toValue: state.index === i ? 1 : 0,
-        useNativeDriver: true,
+        useNativeDriver: useNative,
         tension: 52,
         friction: 8.5,
       }).start();
@@ -125,9 +127,9 @@ export const ModernTabBar: React.FC<ModernTabBarProps> = ({
             {
               width: tabWidth,
               transform: [{ translateX: indicatorTranslateX }],
+              pointerEvents: 'none',
             },
           ]}
-          pointerEvents="none"
         >
           {/* Left Concave Wing (replicates .indicator::before) */}
           <View
