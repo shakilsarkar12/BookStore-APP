@@ -30,8 +30,9 @@ export const CartScreen: React.FC = () => {
   const subtotal = getSubtotal();
   const totalItems = getTotalItems();
   const shipping = subtotal >= FREE_SHIPPING_THRESHOLD || subtotal === 0 ? 0.0 : 4.99;
-  const estimatedTax = Number((subtotal * 0.08).toFixed(2));
-  const finalTotal = Number((subtotal + shipping + estimatedTax).toFixed(2));
+  // In Shopify, taxes are calculated by Shopify at checkout based on the customer's shipping address.
+  // The cart total accurately reflects the items subtotal (+ shipping if applicable), matching Shopify checkout.
+  const finalTotal = Number((subtotal + (shipping > 0 ? shipping : 0)).toFixed(2));
 
   const amountNeededForFreeShipping = Math.max(
     0,
@@ -49,25 +50,9 @@ export const CartScreen: React.FC = () => {
     }).format(amount);
   };
 
-  const handleCheckout = async () => {
+  const handleCheckout = () => {
     if (items.length === 0) return;
-
-    try {
-      setIsCheckingOut(true);
-      const checkoutUrl = await createShopifyCheckoutSession(items);
-      await openShopifyCheckout(checkoutUrl);
-    } catch (err) {
-      console.error('[CartScreen] Checkout initiation error:', err);
-      Alert.alert(
-        'Checkout Notice',
-        err instanceof Error
-          ? err.message
-          : 'Could not connect to Shopify checkout. Please verify your connection or store domain.',
-        [{ text: 'OK' }]
-      );
-    } finally {
-      setIsCheckingOut(false);
-    }
+    router.push('/checkout');
   };
 
   const handleRemoveConfirm = (variantId: string, title: string) => {
@@ -242,15 +227,17 @@ export const CartScreen: React.FC = () => {
               </View>
 
               <View style={styles.summaryRow}>
-                <Text style={styles.summaryLabel}>Estimated Shipping</Text>
+                <Text style={styles.summaryLabel}>Shipping</Text>
                 <Text style={styles.summaryValue}>
                   {shipping === 0 ? 'FREE' : formatCurrency(shipping)}
                 </Text>
               </View>
 
               <View style={styles.summaryRow}>
-                <Text style={styles.summaryLabel}>Estimated Tax</Text>
-                <Text style={styles.summaryValue}>{formatCurrency(estimatedTax)}</Text>
+                <Text style={styles.summaryLabel}>Estimated Taxes</Text>
+                <Text style={[styles.summaryValue, { color: colors.textMuted, fontSize: 13 }]}>
+                  Calculated at checkout
+                </Text>
               </View>
 
               <View style={styles.divider} />

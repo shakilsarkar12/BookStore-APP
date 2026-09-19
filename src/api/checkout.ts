@@ -8,6 +8,7 @@ import * as WebBrowser from 'expo-web-browser';
 import { CartItem, ShopifyCart } from '../types/shopify';
 import { CART_CREATE_MUTATION } from './queries';
 import { isLiveShopifyConfigured, shopifyFetch } from './shopifyClient';
+import { useCustomerStore } from '../store/useCustomerStore';
 import { colors } from '../theme/colors';
 
 export interface CheckoutResult {
@@ -29,6 +30,7 @@ interface CartCreateResponse {
 
 /**
  * Creates a Shopify Cart session and returns the secure checkoutUrl.
+ * Automatically attaches logged-in customer credentials and default address.
  */
 export async function createShopifyCheckoutSession(
   items: CartItem[]
@@ -65,11 +67,43 @@ export async function createShopifyCheckoutSession(
     quantity: item.quantity,
   }));
 
+  // Build buyer identity to automatically prefill customer details at checkout
+  const { customer, accessToken } = useCustomerStore.getState();
+  const buyerIdentity: Record<string, unknown> = {};
+
+  if (customer?.email) {
+    buyerIdentity.email = customer.email;
+  }
+  if (accessToken) {
+    buyerIdentity.customerAccessToken = accessToken;
+  }
+  if (customer?.defaultAddress) {
+    const addr = customer.defaultAddress;
+    buyerIdentity.deliveryAddressPreferences = [
+      {
+        deliveryAddress: {
+          address1: addr.address1,
+          address2: addr.address2 || '',
+          city: addr.city,
+          province: addr.province || '',
+          zip: addr.zip,
+          country: addr.country || 'US',
+          firstName: addr.firstName || customer.firstName || '',
+          lastName: addr.lastName || customer.lastName || '',
+          phone: addr.phone || customer.phone || '',
+        },
+      },
+    ];
+  }
+
+  const cartInput: Record<string, unknown> = { lines };
+  if (Object.keys(buyerIdentity).length > 0) {
+    cartInput.buyerIdentity = buyerIdentity;
+  }
+
   const response = await shopifyFetch<CartCreateResponse>(CART_CREATE_MUTATION, {
     variables: {
-      input: {
-        lines,
-      },
+      input: cartInput,
     },
   });
 
