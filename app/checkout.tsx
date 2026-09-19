@@ -259,6 +259,11 @@ export default function CheckoutScreen() {
             javaScriptEnabled={true}
             domStorageEnabled={true}
             sharedCookiesEnabled={true}
+            thirdPartyCookiesEnabled={true}
+            userAgent="Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36"
+            mixedContentMode="always"
+            cacheEnabled={true}
+            allowsBackForwardNavigationGestures={true}
             originWhitelist={['*']}
             startInLoadingState={true}
             onLoadStart={() => setIsWebviewLoading(true)}
@@ -268,6 +273,29 @@ export default function CheckoutScreen() {
               <View style={styles.webviewLoadingOverlay}>
                 <ActivityIndicator size="large" color={colors.primary} />
                 <Text style={styles.webviewLoadingText}>Loading Checkout...</Text>
+              </View>
+            )}
+            renderError={(_errorDomain, _errorCode, _errorDesc) => (
+              <View style={styles.completedContainer}>
+                <Ionicons name="shield-checkmark-outline" size={56} color={colors.primary} />
+                <Text style={styles.errorTitle}>Secure Shopify Checkout</Text>
+                <Text style={styles.errorSubtitle}>
+                  Shopify requires payment authentication in a secure browser window.
+                </Text>
+                <TouchableOpacity
+                  style={styles.primaryActionBtn}
+                  onPress={() => WebBrowser.openBrowserAsync(checkoutUrl)}
+                  activeOpacity={0.88}
+                >
+                  <Text style={styles.primaryActionBtnText}>Open Secure Checkout</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.secondaryActionBtn}
+                  onPress={() => webViewRef.current?.reload()}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.secondaryActionBtnText}>Retry In-App</Text>
+                </TouchableOpacity>
               </View>
             )}
           />
