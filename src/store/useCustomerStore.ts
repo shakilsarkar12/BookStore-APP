@@ -25,6 +25,7 @@ export const useCustomerStore = create<CustomerStoreState>()(
       accessToken: null,
       customer: null,
       wishlistProductIds: [],
+      wishlistBooks: [],
       isLoading: false,
       error: null,
 
@@ -126,14 +127,22 @@ export const useCustomerStore = create<CustomerStoreState>()(
         });
       },
 
-      toggleWishlist: (productId: string) => {
+      toggleWishlist: (productId: string, book?: any) => {
         set((state) => {
           const exists = state.wishlistProductIds.includes(productId);
-          return {
-            wishlistProductIds: exists
-              ? state.wishlistProductIds.filter((id) => id !== productId)
-              : [...state.wishlistProductIds, productId],
-          };
+          if (exists) {
+            return {
+              wishlistProductIds: state.wishlistProductIds.filter((id) => id !== productId),
+              wishlistBooks: state.wishlistBooks.filter((b) => b.id !== productId),
+            };
+          } else {
+            return {
+              wishlistProductIds: [...state.wishlistProductIds, productId],
+              wishlistBooks: book
+                ? [...state.wishlistBooks.filter((b) => b.id !== productId), book]
+                : state.wishlistBooks,
+            };
+          }
         });
       },
 
@@ -209,6 +218,7 @@ export const useCustomerStore = create<CustomerStoreState>()(
         isAuthenticated: state.isAuthenticated,
         accessToken: state.accessToken,
         wishlistProductIds: state.wishlistProductIds,
+        wishlistBooks: state.wishlistBooks,
       }),
     }
   )

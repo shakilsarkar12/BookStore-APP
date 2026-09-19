@@ -352,7 +352,7 @@ export default function ProductDetailScreen() {
               styles.wishlistCircleButton,
               isWishlisted && styles.wishlistCircleButtonActive,
             ]}
-            onPress={() => book && toggleWishlist(book.id)}
+            onPress={() => book && toggleWishlist(book.id, book)}
             activeOpacity={0.7}
             accessibilityRole="button"
             accessibilityLabel={isWishlisted ? 'Remove from wishlist' : 'Save to wishlist'}

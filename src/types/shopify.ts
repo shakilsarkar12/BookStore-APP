@@ -225,6 +225,7 @@ export interface CustomerStoreState {
   accessToken: string | null;
   customer: CustomerProfile | null;
   wishlistProductIds: string[];
+  wishlistBooks: BookProduct[];
   isLoading: boolean;
   error: string | null;
   login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
@@ -238,7 +239,7 @@ export interface CustomerStoreState {
   forgotPassword: (email: string) => Promise<{ success: boolean; error?: string }>;
   fetchCustomer: () => Promise<void>;
   logout: () => Promise<void>;
-  toggleWishlist: (productId: string) => void;
+  toggleWishlist: (productId: string, book?: BookProduct) => void;
   isWishlisted: (productId: string) => boolean;
   addAddress: (address: {
     address1: string;

@@ -13,6 +13,7 @@ import { BookProduct } from '../types/shopify';
 import { colors } from '../theme/colors';
 import { typography, radii, spacing, shadows } from '../theme/typography';
 import { useCartStore } from '../store/useCartStore';
+import { useCustomerStore } from '../store/useCustomerStore';
 
 export interface BookCardProps {
   book: BookProduct;
@@ -27,6 +28,15 @@ export const BookCard: React.FC<BookCardProps> = ({
 }) => {
   const router = useRouter();
   const addItem = useCartStore((state) => state.addItem);
+  const isWishlisted = useCustomerStore((state) => state.isWishlisted(book.id));
+  const toggleWishlist = useCustomerStore((state) => state.toggleWishlist);
+
+  const handleWishlistToggle = (e: { stopPropagation?: () => void }) => {
+    if (e && e.stopPropagation) {
+      e.stopPropagation();
+    }
+    toggleWishlist(book.id, book);
+  };
 
   const coverUrl =
     book.images?.edges?.[0]?.node?.url ||
@@ -96,6 +106,18 @@ export const BookCard: React.FC<BookCardProps> = ({
             style={styles.horizontalCoverImage}
             resizeMode="cover"
           />
+          <TouchableOpacity
+            style={styles.cardWishlistBtn}
+            onPress={handleWishlistToggle}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            accessibilityLabel={isWishlisted ? 'Remove from wishlist' : 'Save to wishlist'}
+          >
+            <Ionicons
+              name={isWishlisted ? 'heart' : 'heart-outline'}
+              size={15}
+              color={isWishlisted ? colors.error : colors.textPrimary}
+            />
+          </TouchableOpacity>
         </TouchableOpacity>
 
         <View style={styles.horizontalInfo}>
@@ -174,6 +196,18 @@ export const BookCard: React.FC<BookCardProps> = ({
               <Text style={styles.saleBadgeText}>SALE</Text>
             </View>
           ) : null}
+          <TouchableOpacity
+            style={styles.cardWishlistBtn}
+            onPress={handleWishlistToggle}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            accessibilityLabel={isWishlisted ? 'Remove from wishlist' : 'Save to wishlist'}
+          >
+            <Ionicons
+              name={isWishlisted ? 'heart' : 'heart-outline'}
+              size={15}
+              color={isWishlisted ? colors.error : colors.textPrimary}
+            />
+          </TouchableOpacity>
         </View>
 
         <View style={styles.gridInfo}>
@@ -265,6 +299,19 @@ const styles = StyleSheet.create({
     fontSize: 9,
     fontWeight: '800',
     letterSpacing: 0.5,
+  },
+  cardWishlistBtn: {
+    position: 'absolute',
+    top: spacing.xs,
+    right: spacing.xs,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255, 255, 255, 0.92)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    ...shadows.subtle,
+    zIndex: 10,
   },
   gridInfo: {
     marginTop: spacing.sm,

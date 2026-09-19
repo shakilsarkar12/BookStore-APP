@@ -31,6 +31,7 @@ export default function ProfileScreen() {
     isAuthenticated,
     customer,
     wishlistProductIds,
+    wishlistBooks,
     isLoading,
     login,
     register,
@@ -221,19 +222,29 @@ export default function ProfileScreen() {
   };
 
   // Move wishlist book to cart
-  const handleMoveWishlistToCart = (book: typeof MOCK_BOOKS[0]) => {
-    const variant = book.variants.edges[0]?.node;
-    if (!variant) return;
+  const handleMoveWishlistToCart = (book: any) => {
+    const variant = book.variants?.edges?.[0]?.node;
+    const price = parseFloat(
+      variant?.price?.amount ||
+      book.priceRange?.minVariantPrice?.amount ||
+      '0'
+    );
+    const currencyCode =
+      variant?.price?.currencyCode ||
+      book.priceRange?.minVariantPrice?.currencyCode ||
+      'USD';
+    const cover =
+      book.images?.edges?.[0]?.node?.url || '';
 
     addItemToCart({
       productId: book.id,
-      variantId: variant.id,
+      variantId: variant?.id || book.id,
       title: book.title,
       author: book.vendor,
-      format: variant.title || 'Standard Edition',
-      price: parseFloat(variant.price.amount),
-      currencyCode: variant.price.currencyCode,
-      imageUrl: book.images.edges[0]?.node.url || '',
+      format: variant?.title || 'Standard Edition',
+      price,
+      currencyCode,
+      imageUrl: cover,
       quantity: 1,
     });
 
@@ -530,8 +541,15 @@ export default function ProfileScreen() {
     );
   }
 
-  // Wishlist Books list
-  const wishlistBooks = MOCK_BOOKS.filter((book) => wishlistProductIds.includes(book.id));
+  // Real Wishlist Books from store with fallback to mock if applicable
+  const displayedWishlistBooks = [
+    ...wishlistBooks,
+    ...MOCK_BOOKS.filter(
+      (mb) =>
+        wishlistProductIds.includes(mb.id) &&
+        !wishlistBooks.some((wb) => wb.id === mb.id)
+    ),
+  ];
 
   // -------------------------------------------------------------
   // RENDER: AUTHENTICATED CUSTOMER (Real Shopify Customer Profile)
@@ -621,7 +639,7 @@ export default function ProfileScreen() {
                 activeTab === 'wishlist' && styles.profileTabTextActive,
               ]}
             >
-              Wishlist ({wishlistBooks.length})
+              Wishlist ({displayedWishlistBooks.length})
             </Text>
           </TouchableOpacity>
         </View>
@@ -834,7 +852,7 @@ export default function ProfileScreen() {
         {/* --------------------------------------------------------- */}
         {activeTab === 'wishlist' && (
           <View style={styles.tabContainer}>
-            {wishlistBooks.length === 0 ? (
+            {displayedWishlistBooks.length === 0 ? (
               <View style={styles.emptyCard}>
                 <Ionicons name="heart-dislike-outline" size={48} color={colors.textMuted} />
                 <Text style={styles.emptyTitle}>Wishlist is Empty</Text>
@@ -849,9 +867,14 @@ export default function ProfileScreen() {
                 </TouchableOpacity>
               </View>
             ) : (
-              wishlistBooks.map((book) => {
-                const cover = book.images.edges[0]?.node.url;
-                const price = parseFloat(book.priceRange.minVariantPrice.amount);
+              displayedWishlistBooks.map((book) => {
+                const cover =
+                  book.images?.edges?.[0]?.node?.url || '';
+                const price = parseFloat(
+                  book.priceRange?.minVariantPrice?.amount ||
+                  book.variants?.edges?.[0]?.node?.price?.amount ||
+                  '0'
+                );
 
                 return (
                   <View key={book.id} style={styles.wishlistCard}>

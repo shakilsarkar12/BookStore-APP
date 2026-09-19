@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import Svg, { Path } from 'react-native-svg';
 import type { Tabs } from 'expo-router';
 import { colors } from '../theme/colors';
 import { typography } from '../theme/typography';
@@ -120,7 +121,7 @@ export const ModernTabBar: React.FC<ModernTabBarProps> = ({
   return (
     <View style={[styles.rootContainer, { paddingBottom: bottomPadding }]}>
       <View style={styles.barOuter} onLayout={onBarLayout}>
-        {/* The Single Sliding Indicator with Inverted Wings (Exact match to Modern-Navigation) */}
+        {/* The Single Sliding Indicator with Organic Concave SVG Wings (Exact match to Modern-Navigation) */}
         <Animated.View
           style={[
             styles.slidingIndicatorContainer,
@@ -136,11 +137,16 @@ export const ModernTabBar: React.FC<ModernTabBarProps> = ({
             style={[
               styles.wingBase,
               {
-                left: tabWidth / 2 - CIRCLE_RADIUS - WING_SIZE + 1,
+                left: tabWidth / 2 - CIRCLE_RADIUS - WING_SIZE + 0.5,
               },
             ]}
           >
-            <View style={styles.leftWingCutout} />
+            <Svg width={WING_SIZE} height={WING_SIZE} viewBox="0 0 20 20">
+              <Path
+                d="M 0 0 L 20 0 L 20 20 A 20 20 0 0 0 0 0 Z"
+                fill={colors.background}
+              />
+            </Svg>
           </View>
 
           {/* Floating Center Circle (replicates .indicator) */}
@@ -158,11 +164,16 @@ export const ModernTabBar: React.FC<ModernTabBarProps> = ({
             style={[
               styles.wingBase,
               {
-                left: tabWidth / 2 + CIRCLE_RADIUS - 1,
+                left: tabWidth / 2 + CIRCLE_RADIUS - 0.5,
               },
             ]}
           >
-            <View style={styles.rightWingCutout} />
+            <Svg width={WING_SIZE} height={WING_SIZE} viewBox="0 0 20 20">
+              <Path
+                d="M 0 0 L 20 0 A 20 20 0 0 0 0 20 L 0 0 Z"
+                fill={colors.background}
+              />
+            </Svg>
           </View>
         </Animated.View>
 
@@ -316,20 +327,7 @@ const styles = StyleSheet.create({
     top: 0,
     width: WING_SIZE,
     height: WING_SIZE,
-    backgroundColor: colors.card, // Base is bar color
-    overflow: 'hidden',
-  },
-  leftWingCutout: {
-    width: WING_SIZE,
-    height: WING_SIZE,
-    backgroundColor: colors.background, // Cuts out into screen background
-    borderBottomRightRadius: WING_SIZE,
-  },
-  rightWingCutout: {
-    width: WING_SIZE,
-    height: WING_SIZE,
-    backgroundColor: colors.background, // Cuts out into screen background
-    borderBottomLeftRadius: WING_SIZE,
+    backgroundColor: 'transparent',
   },
   tabsRow: {
     flexDirection: 'row',
